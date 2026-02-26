@@ -1,0 +1,9 @@
+[project]
+name = "matersthesis"
+version = "0.1.0"
+description = "Deterministic Brändi Dog rules engine and simulation core"
+requires-python = ">=3.9"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=7.4"]

@@ -19,6 +19,7 @@ from .board import (
     SAFE_ZONE_LENGTH,
     entry_index,
     is_direct_play_position,
+    SimulatedPath,
     simulate_entry_from_base,
     simulate_step_move,
     track_occupant,
@@ -39,6 +40,7 @@ from .state import (
     player_pawns,
     set_hand,
     set_pawn_position,
+    set_pawn_safe_entry_ready,
     team_winner,
     teammate_of,
 )
@@ -178,22 +180,48 @@ def _legal_step_actions(
     owner = _controlled_owner_for_turn(state, player)
     actions: list[Action] = []
     for pawn in player_pawns(owner):
-        path = simulate_step_move(state, pawn, direction=direction, steps=steps)
-        if path is None:
-            continue
-        if is_joker and _joker_last_pawn_safe_entry_violation(state, pawn, path.entered_safe_from_track):
-            continue
-        actions.append(
-            PlayStepCardAction(
-                player=player,
-                card_id=card_id,
-                represented_rank=represented_rank,
-                pawn=pawn,
-                steps=steps,
-                direction=direction,
+        for prefer_safe_entry, path in _step_path_candidates(state, pawn, direction=direction, steps=steps):
+            if is_joker and _joker_last_pawn_safe_entry_violation(state, pawn, path.entered_safe_from_track):
+                continue
+            actions.append(
+                PlayStepCardAction(
+                    player=player,
+                    card_id=card_id,
+                    represented_rank=represented_rank,
+                    pawn=pawn,
+                    steps=steps,
+                    direction=direction,
+                    prefer_safe_entry=prefer_safe_entry,
+                )
             )
-        )
     return actions
+
+
+def _step_path_candidates(
+    state: GameState,
+    pawn: PawnRef,
+    direction: MoveDirection,
+    steps: int,
+) -> tuple[tuple[bool, SimulatedPath], ...]:
+    if direction == MoveDirection.BACKWARD:
+        path = simulate_step_move(state, pawn, direction=direction, steps=steps, prefer_safe_entry=True)
+        if path is None:
+            return ()
+        return ((True, path),)
+
+    preferred = simulate_step_move(state, pawn, direction=direction, steps=steps, prefer_safe_entry=True)
+    non_entering = simulate_step_move(state, pawn, direction=direction, steps=steps, prefer_safe_entry=False)
+
+    candidates: list[tuple[bool, SimulatedPath]] = []
+    if preferred is not None:
+        candidates.append((True, preferred))
+
+    if non_entering is not None:
+        duplicate = preferred is not None and non_entering == preferred
+        if not duplicate:
+            candidates.append((False, non_entering))
+
+    return tuple(candidates)
 
 
 def _legal_jack_actions(state: GameState, player: PlayerId, card_id: int, represented_rank: Rank) -> list[Action]:
@@ -249,21 +277,25 @@ def _legal_seven_actions(
 
         for pawn in pawns:
             for step_count in range(1, remaining + 1):
-                path = simulate_step_move(current_state, pawn, direction=MoveDirection.FORWARD, steps=step_count)
-                if path is None:
-                    continue
-                if is_joker and _joker_last_pawn_safe_entry_violation(current_state, pawn, path.entered_safe_from_track):
-                    continue
-                next_state = _apply_move_path(
+                for prefer_safe_entry, path in _step_path_candidates(
                     current_state,
-                    pawn=pawn,
-                    end=path.end,
-                    traversed_open_track=path.traversed_open_track_indices,
-                    pass_capture=True,
-                )
-                moves.append(SevenSubMove(pawn=pawn, steps=step_count))
-                dfs(next_state, remaining - step_count, moves)
-                moves.pop()
+                    pawn,
+                    direction=MoveDirection.FORWARD,
+                    steps=step_count,
+                ):
+                    if is_joker and _joker_last_pawn_safe_entry_violation(current_state, pawn, path.entered_safe_from_track):
+                        continue
+                    next_state = _apply_move_path(
+                        current_state,
+                        pawn=pawn,
+                        end=path.end,
+                        traversed_open_track=path.traversed_open_track_indices,
+                        crossed_own_entry_from_behind=path.crossed_own_entry_from_behind,
+                        pass_capture=True,
+                    )
+                    moves.append(SevenSubMove(pawn=pawn, steps=step_count, prefer_safe_entry=prefer_safe_entry))
+                    dfs(next_state, remaining - step_count, moves)
+                    moves.pop()
 
     dfs(state, remaining=7, moves=[])
     return actions
@@ -331,6 +363,7 @@ def _apply_play_enter_action(state: GameState, action: PlayEnterAction, cards_by
         raise ValueError("Invalid entry action")
 
     updated = set_pawn_position(state, action.pawn, path.end)
+    updated = set_pawn_safe_entry_ready(updated, action.pawn, False)
     updated = _consume_played_card(updated, action.player, action.card_id)
     return _finalize_play_transition(updated)
 
@@ -338,7 +371,13 @@ def _apply_play_enter_action(state: GameState, action: PlayEnterAction, cards_by
 def _apply_play_step_action(state: GameState, action: PlayStepCardAction, cards_by_id: dict[int, Card]) -> GameState:
     _assert_card_identity(cards_by_id, action.card_id, action.represented_rank)
 
-    path = simulate_step_move(state, action.pawn, direction=action.direction, steps=action.steps)
+    path = simulate_step_move(
+        state,
+        action.pawn,
+        direction=action.direction,
+        steps=action.steps,
+        prefer_safe_entry=action.prefer_safe_entry,
+    )
     if path is None:
         raise ValueError("Invalid step move action")
 
@@ -352,6 +391,7 @@ def _apply_play_step_action(state: GameState, action: PlayStepCardAction, cards_
         pawn=action.pawn,
         end=path.end,
         traversed_open_track=path.traversed_open_track_indices,
+        crossed_own_entry_from_behind=path.crossed_own_entry_from_behind,
         pass_capture=False,
     )
     updated = _consume_played_card(updated, action.player, action.card_id)
@@ -393,7 +433,13 @@ def _apply_play_seven_action(state: GameState, action: PlaySevenSplitAction, car
         if move.pawn.owner not in owners:
             raise ValueError("Seven split includes a pawn outside the controllable set")
 
-        path = simulate_step_move(updated, move.pawn, direction=MoveDirection.FORWARD, steps=move.steps)
+        path = simulate_step_move(
+            updated,
+            move.pawn,
+            direction=MoveDirection.FORWARD,
+            steps=move.steps,
+            prefer_safe_entry=move.prefer_safe_entry,
+        )
         if path is None:
             raise ValueError("Invalid seven split move segment")
 
@@ -407,6 +453,7 @@ def _apply_play_seven_action(state: GameState, action: PlaySevenSplitAction, car
             pawn=move.pawn,
             end=path.end,
             traversed_open_track=path.traversed_open_track_indices,
+            crossed_own_entry_from_behind=path.crossed_own_entry_from_behind,
             pass_capture=True,
         )
 
@@ -423,6 +470,7 @@ def _apply_move_path(
     pawn: PawnRef,
     end,
     traversed_open_track: tuple[int, ...],
+    crossed_own_entry_from_behind: bool,
     pass_capture: bool,
 ) -> GameState:
     updated = state
@@ -432,13 +480,17 @@ def _apply_move_path(
             victim = track_occupant(updated, track_index, ignore=[pawn])
             if victim is not None:
                 updated = set_pawn_position(updated, victim, base_position())
+                updated = set_pawn_safe_entry_ready(updated, victim, False)
 
     updated = set_pawn_position(updated, pawn, end)
+    if crossed_own_entry_from_behind:
+        updated = set_pawn_safe_entry_ready(updated, pawn, True)
 
     if end.kind == PositionKind.TRACK and end.index is not None:
         victim = track_occupant(updated, end.index, ignore=[pawn])
         if victim is not None:
             updated = set_pawn_position(updated, victim, base_position())
+            updated = set_pawn_safe_entry_ready(updated, victim, False)
 
     return updated
 

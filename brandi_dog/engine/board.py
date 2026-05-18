@@ -12,6 +12,7 @@ from .state import (
     PositionKind,
     get_pawn_position,
     index_to_pawn,
+    pawn_safe_entry_ready,
     pawn_to_index,
     safe_position,
     track_position,
@@ -98,6 +99,7 @@ class SimulatedPath:
     counted_positions: tuple[Position, ...]
     traversed_open_track_indices: tuple[int, ...]
     entered_safe_from_track: bool
+    crossed_own_entry_from_behind: bool
 
 
 @dataclass(frozen=True)
@@ -120,6 +122,7 @@ def simulate_step_move(
     pawn: PawnRef,
     direction: MoveDirection,
     steps: int,
+    prefer_safe_entry: bool = True,
 ) -> Optional[SimulatedPath]:
     if steps <= 0:
         return None
@@ -130,10 +133,10 @@ def simulate_step_move(
 
     if direction == MoveDirection.BACKWARD:
         return _simulate_backward(state, pawn, steps)
-    return _simulate_forward(state, pawn, steps)
+    return _simulate_forward(state, pawn, steps, prefer_safe_entry=prefer_safe_entry)
 
 
-def _simulate_forward(state: GameState, pawn: PawnRef, steps: int) -> Optional[SimulatedPath]:
+def _simulate_forward(state: GameState, pawn: PawnRef, steps: int, prefer_safe_entry: bool) -> Optional[SimulatedPath]:
     start = get_pawn_position(state, pawn)
     counted: list[Position] = []
     traversed_open: list[int] = []
@@ -154,6 +157,7 @@ def _simulate_forward(state: GameState, pawn: PawnRef, steps: int) -> Optional[S
             counted_positions=tuple(counted),
             traversed_open_track_indices=tuple(traversed_open),
             entered_safe_from_track=False,
+            crossed_own_entry_from_behind=False,
         )
 
     if start.kind != PositionKind.TRACK or start.index is None:
@@ -161,7 +165,8 @@ def _simulate_forward(state: GameState, pawn: PawnRef, steps: int) -> Optional[S
 
     current = start.index
     remaining = steps
-    reached_own_entry_from_behind = False
+    can_enter_safe_now = pawn_safe_entry_ready(state, pawn)
+    crossed_own_entry_from_behind = False
     entered_safe = False
     safe_idx: Optional[int] = None
 
@@ -177,14 +182,13 @@ def _simulate_forward(state: GameState, pawn: PawnRef, steps: int) -> Optional[S
             remaining -= 1
             continue
 
-        if reached_own_entry_from_behind and current == entry_index(pawn.owner):
-            if safe_occupant(state, pawn.owner, 0, ignore=[pawn]) is not None:
-                return None
-            safe_idx = 0
-            counted.append(safe_position(0))
-            entered_safe = True
-            remaining -= 1
-            continue
+        if can_enter_safe_now and current == entry_index(pawn.owner) and prefer_safe_entry:
+            if safe_occupant(state, pawn.owner, 0, ignore=[pawn]) is None:
+                safe_idx = 0
+                counted.append(safe_position(0))
+                entered_safe = True
+                remaining -= 1
+                continue
 
         prev = current
         candidate = next_track_index(current)
@@ -206,7 +210,8 @@ def _simulate_forward(state: GameState, pawn: PawnRef, steps: int) -> Optional[S
         remaining -= 1
 
         if current == entry_index(pawn.owner) and prev == predecessor_of_entry(pawn.owner):
-            reached_own_entry_from_behind = True
+            can_enter_safe_now = True
+            crossed_own_entry_from_behind = True
 
     if safe_idx is not None:
         end = safe_position(safe_idx)
@@ -218,6 +223,7 @@ def _simulate_forward(state: GameState, pawn: PawnRef, steps: int) -> Optional[S
         counted_positions=tuple(counted),
         traversed_open_track_indices=tuple(traversed_open),
         entered_safe_from_track=entered_safe,
+        crossed_own_entry_from_behind=crossed_own_entry_from_behind,
     )
 
 
@@ -255,4 +261,5 @@ def _simulate_backward(state: GameState, pawn: PawnRef, steps: int) -> Optional[
         counted_positions=tuple(counted),
         traversed_open_track_indices=tuple(traversed_open),
         entered_safe_from_track=False,
+        crossed_own_entry_from_behind=False,
     )

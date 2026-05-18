@@ -86,6 +86,7 @@ class GameState:
     active_deal_size: int
     hands: tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...], tuple[int, ...]]
     pawn_positions: tuple[Position, ...]
+    pawn_safe_entry_ready: tuple[bool, ...]
     draw_pile: tuple[int, ...]
     discard_pile: tuple[int, ...]
     winner: Optional[Team] = None
@@ -133,6 +134,16 @@ def set_pawn_position(state: GameState, pawn: PawnRef, position: Position) -> Ga
     as_list = list(state.pawn_positions)
     as_list[pawn_to_index(pawn)] = position
     return replace(state, pawn_positions=tuple(as_list))
+
+
+def pawn_safe_entry_ready(state: GameState, pawn: PawnRef) -> bool:
+    return state.pawn_safe_entry_ready[pawn_to_index(pawn)]
+
+
+def set_pawn_safe_entry_ready(state: GameState, pawn: PawnRef, ready: bool) -> GameState:
+    as_list = list(state.pawn_safe_entry_ready)
+    as_list[pawn_to_index(pawn)] = ready
+    return replace(state, pawn_safe_entry_ready=tuple(as_list))
 
 
 def hand_of(state: GameState, player: PlayerId) -> tuple[int, ...]:
@@ -186,3 +197,7 @@ def initial_hands() -> tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...], 
 
 def initial_pawn_positions() -> tuple[Position, ...]:
     return tuple(base_position() for _ in range(16))
+
+
+def initial_pawn_safe_entry_ready() -> tuple[bool, ...]:
+    return tuple(False for _ in range(16))

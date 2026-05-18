@@ -15,6 +15,7 @@ from .state import (
     empty_swap_selections,
     initial_hands,
     initial_pawn_positions,
+    initial_pawn_safe_entry_ready,
     next_in_play_order,
 )
 
@@ -41,6 +42,7 @@ class GameEngine:
             active_deal_size=0,
             hands=initial_hands(),
             pawn_positions=initial_pawn_positions(),
+            pawn_safe_entry_ready=initial_pawn_safe_entry_ready(),
             draw_pile=tuple(draw_pile),
             discard_pile=(),
             winner=None,

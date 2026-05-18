@@ -27,6 +27,7 @@ class PlayStepCardAction:
     pawn: PawnRef
     steps: int
     direction: MoveDirection
+    prefer_safe_entry: bool = True
 
 
 @dataclass(frozen=True)
@@ -41,6 +42,7 @@ class PlayEnterAction:
 class SevenSubMove:
     pawn: PawnRef
     steps: int
+    prefer_safe_entry: bool = True
 
 
 @dataclass(frozen=True)

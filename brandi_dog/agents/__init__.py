@@ -1,3 +1,4 @@
-from .random_legal_agent import RandomLegalAgent
+from .action_generation import AgentActionGenerationPolicy
+from .heuristic_agent import HeuristicAgent
 
-__all__ = ["RandomLegalAgent"]
+__all__ = ["AgentActionGenerationPolicy", "HeuristicAgent"]

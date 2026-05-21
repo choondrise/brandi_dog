@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 
+from brandi_dog.agents import AdvancedHeuristicAgent
 from brandi_dog.agents.heuristic_agent import HeuristicAgent
 from brandi_dog.agents.random_legal_agent import RandomLegalAgent
 from brandi_dog.engine.engine import GameEngine
@@ -36,7 +37,7 @@ def _team_safe_count(state: GameState, team: Team) -> int:
 def _play_single_game(game_seed: int, max_turns: int) -> GameState:
     engine = GameEngine(seed=game_seed)
     agents = {
-        PlayerId.A1: HeuristicAgent(seed=game_seed * 17 + 1),
+        PlayerId.A1: AdvancedHeuristicAgent(seed=game_seed * 17 + 1, style='aggressive'),
         PlayerId.A2: HeuristicAgent(seed=game_seed * 17 + 2),
         PlayerId.B1: HeuristicAgent(seed=game_seed * 17 + 3),
         PlayerId.B2: HeuristicAgent(seed=game_seed * 17 + 4),
@@ -85,12 +86,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Simulate games between 2 heuristic agents (Team A) and 2 random agents (Team B).",
     )
-    parser.add_argument("--games", type=int, default=10, help="Number of games to simulate.")
+    parser.add_argument("--games", type=int, default=30, help="Number of games to simulate.")
     parser.add_argument("--seed", type=int, default=1, help="Base seed for deterministic simulation.")
     parser.add_argument(
         "--max-turns",
         type=int,
-        default=1000,
+        default=250,
         help="Safety cap for turns per game.",
     )
     args = parser.parse_args()

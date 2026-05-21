@@ -16,6 +16,7 @@ from .actions import (
     SwapCardAction,
 )
 from .board import (
+    MAIN_TRACK_LENGTH,
     SAFE_ZONE_LENGTH,
     entry_index,
     is_direct_play_position,
@@ -35,6 +36,7 @@ from .state import (
     base_position,
     get_pawn_position,
     hand_of,
+    pawn_safe_entry_ready,
     next_in_play_order,
     player_finished,
     player_pawns,
@@ -99,10 +101,16 @@ def _legal_play_actions(state: GameState, cards_by_id: dict[int, Card]) -> tuple
     if not hand:
         return (SkipTurnAction(player=player),)
 
+    non_joker_ranks_in_hand = {
+        cards_by_id[card_id].rank
+        for card_id in hand
+        if cards_by_id[card_id].rank != Rank.JOKER
+    }
+
     actions: list[Action] = []
     for card_id in hand:
         card = cards_by_id[card_id]
-        actions.extend(_legal_card_actions(state, player, card_id, card))
+        actions.extend(_legal_card_actions(state, player, card_id, card, non_joker_ranks_in_hand))
 
     if not actions:
         return (DiscardHandAction(player=player),)
@@ -110,8 +118,14 @@ def _legal_play_actions(state: GameState, cards_by_id: dict[int, Card]) -> tuple
     return tuple(actions)
 
 
-def _legal_card_actions(state: GameState, player: PlayerId, card_id: int, card: Card) -> list[Action]:
-    represented_ranks = (card.rank,) if card.rank != Rank.JOKER else tuple(r for r in Rank if r != Rank.JOKER)
+def _legal_card_actions(
+    state: GameState,
+    player: PlayerId,
+    card_id: int,
+    card: Card,
+    non_joker_ranks_in_hand: set[Rank],
+) -> list[Action]:
+    represented_ranks = _represented_ranks_for_card(card.rank, non_joker_ranks_in_hand)
     is_joker = card.rank == Rank.JOKER
 
     actions: list[Action] = []
@@ -139,6 +153,12 @@ def _legal_card_actions(state: GameState, player: PlayerId, card_id: int, card: 
     return actions
 
 
+def _represented_ranks_for_card(card_rank: Rank, non_joker_ranks_in_hand: set[Rank]) -> tuple[Rank, ...]:
+    if card_rank != Rank.JOKER:
+        return (card_rank,)
+    return tuple(rank for rank in Rank if rank != Rank.JOKER and rank not in non_joker_ranks_in_hand)
+
+
 def _controlled_owner_for_turn(state: GameState, player: PlayerId) -> PlayerId:
     if player_finished(state, player):
         return teammate_of(player)
@@ -153,19 +173,18 @@ def _seven_allowed_owners(state: GameState, player: PlayerId) -> tuple[PlayerId,
 
 def _legal_entry_actions(state: GameState, player: PlayerId, card_id: int, represented_rank: Rank) -> list[Action]:
     owner = _controlled_owner_for_turn(state, player)
-    actions: list[Action] = []
     for pawn in player_pawns(owner):
         if simulate_entry_from_base(state, pawn) is None:
             continue
-        actions.append(
+        return [
             PlayEnterAction(
                 player=player,
                 card_id=card_id,
                 represented_rank=represented_rank,
                 pawn=pawn,
             )
-        )
-    return actions
+        ]
+    return []
 
 
 def _legal_step_actions(
@@ -259,46 +278,119 @@ def _legal_seven_actions(
     is_joker: bool,
 ) -> list[Action]:
     owners = _seven_allowed_owners(state, player)
-    pawns = tuple(pawn for owner in owners for pawn in player_pawns(owner))
+    pawns = tuple(
+        pawn
+        for owner in owners
+        for pawn in player_pawns(owner)
+        if get_pawn_position(state, pawn).kind != PositionKind.BASE
+    )
     actions: list[Action] = []
 
-    def dfs(current_state: GameState, remaining: int, moves: list[SevenSubMove]) -> None:
-        if remaining == 0:
-            if moves:
-                actions.append(
-                    PlaySevenSplitAction(
-                        player=player,
-                        card_id=card_id,
-                        represented_rank=represented_rank,
-                        moves=tuple(moves),
-                    )
+    for allocation in _seven_step_allocations(len(pawns), total=7):
+        raw_moves = [
+            SevenSubMove(pawn=pawn, steps=steps)
+            for pawn, steps in zip(pawns, allocation)
+            if steps > 0
+        ]
+        if not raw_moves:
+            continue
+
+        ordered_moves = tuple(
+            sorted(
+                raw_moves,
+                key=lambda move: (_pawn_progress_for_seven_order(state, move.pawn), -int(move.pawn.owner), -move.pawn.number),
+                reverse=True,
+            )
+        )
+        actions.extend(
+            _seven_actions_for_ordered_allocation(
+                state=state,
+                player=player,
+                card_id=card_id,
+                represented_rank=represented_rank,
+                is_joker=is_joker,
+                ordered_moves=ordered_moves,
+            )
+        )
+
+    return actions
+
+
+def _seven_step_allocations(num_pawns: int, total: int) -> tuple[tuple[int, ...], ...]:
+    if num_pawns <= 0:
+        return ()
+    allocations: list[tuple[int, ...]] = []
+
+    def build(index: int, remaining: int, current: list[int]) -> None:
+        if index == num_pawns - 1:
+            allocations.append(tuple(current + [remaining]))
+            return
+        for steps in range(remaining + 1):
+            current.append(steps)
+            build(index + 1, remaining - steps, current)
+            current.pop()
+
+    build(0, total, [])
+    return tuple(allocations)
+
+
+def _seven_actions_for_ordered_allocation(
+    state: GameState,
+    player: PlayerId,
+    card_id: int,
+    represented_rank: Rank,
+    is_joker: bool,
+    ordered_moves: tuple[SevenSubMove, ...],
+) -> list[Action]:
+    actions: list[Action] = []
+
+    def build(current_state: GameState, index: int, moves: list[SevenSubMove]) -> None:
+        if index >= len(ordered_moves):
+            actions.append(
+                PlaySevenSplitAction(
+                    player=player,
+                    card_id=card_id,
+                    represented_rank=represented_rank,
+                    moves=tuple(moves),
                 )
+            )
             return
 
-        for pawn in pawns:
-            for step_count in range(1, remaining + 1):
-                for prefer_safe_entry, path in _step_path_candidates(
-                    current_state,
-                    pawn,
-                    direction=MoveDirection.FORWARD,
-                    steps=step_count,
-                ):
-                    if is_joker and _joker_last_pawn_safe_entry_violation(current_state, pawn, path.entered_safe_from_track):
-                        continue
-                    next_state = _apply_move_path(
-                        current_state,
-                        pawn=pawn,
-                        end=path.end,
-                        traversed_open_track=path.traversed_open_track_indices,
-                        crossed_own_entry_from_behind=path.crossed_own_entry_from_behind,
-                        pass_capture=True,
-                    )
-                    moves.append(SevenSubMove(pawn=pawn, steps=step_count, prefer_safe_entry=prefer_safe_entry))
-                    dfs(next_state, remaining - step_count, moves)
-                    moves.pop()
+        move = ordered_moves[index]
+        for prefer_safe_entry, path in _step_path_candidates(
+            current_state,
+            move.pawn,
+            direction=MoveDirection.FORWARD,
+            steps=move.steps,
+        ):
+            if is_joker and _joker_last_pawn_safe_entry_violation(current_state, move.pawn, path.entered_safe_from_track):
+                continue
+            next_state = _apply_move_path(
+                current_state,
+                pawn=move.pawn,
+                end=path.end,
+                traversed_open_track=path.traversed_open_track_indices,
+                crossed_own_entry_from_behind=path.crossed_own_entry_from_behind,
+                pass_capture=True,
+            )
+            moves.append(SevenSubMove(pawn=move.pawn, steps=move.steps, prefer_safe_entry=prefer_safe_entry))
+            build(next_state, index + 1, moves)
+            moves.pop()
 
-    dfs(state, remaining=7, moves=[])
+    build(state, 0, [])
     return actions
+
+
+def _pawn_progress_for_seven_order(state: GameState, pawn: PawnRef) -> int:
+    position = get_pawn_position(state, pawn)
+    if position.kind == PositionKind.SAFE and position.index is not None:
+        return MAIN_TRACK_LENGTH + position.index + 1
+    if position.kind == PositionKind.TRACK and position.index is not None:
+        progress = 1 + ((position.index - entry_index(pawn.owner)) % MAIN_TRACK_LENGTH)
+        if pawn_safe_entry_ready(state, pawn):
+            progress += MAIN_TRACK_LENGTH
+        return progress
+    return -1
 
 
 def _joker_last_pawn_safe_entry_violation(state: GameState, pawn: PawnRef, entered_safe_from_track: bool) -> bool:

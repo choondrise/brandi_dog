@@ -157,7 +157,12 @@ class HeuristicAgent:
         if state.round_stage == RoundStage.TEAM_SWAPS:
             return engine.legal_actions(state)
         options = self._play_options_for_agent(engine, state)
-        return self._preselect_play_options(options, state, actor, engine.cards_by_id)
+        filtered = self._preselect_play_options(options, state, actor, engine.cards_by_id)
+        legal = set(engine.legal_actions(state))
+        legal_filtered = tuple(action for action in filtered if action in legal)
+        if legal_filtered:
+            return legal_filtered
+        return tuple(legal)
 
     def _select_swap_action(
         self,

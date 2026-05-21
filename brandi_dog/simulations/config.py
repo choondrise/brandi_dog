@@ -23,7 +23,8 @@ class ExperimentConfig:
     num_games: int
     seed: int
     agents_by_player: AgentsByPlayer
-    output_path: Path
+    output_path: Optional[Path] = None
     max_turns: Optional[int] = None
-    experiment_runs: int = 1
-    move_analysis_path: Optional[Path] = None
+    team_a_label: str = "Team A"
+    team_b_label: str = "Team B"
+    print_progress: bool = True

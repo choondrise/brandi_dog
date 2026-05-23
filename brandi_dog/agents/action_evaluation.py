@@ -62,9 +62,9 @@ def candidate_actions(engine: GameEngine, state: GameState) -> tuple[Action, ...
     legal = engine.legal_actions(state)
     if not legal:
         return ()
-    filtered = filter_redundant_joker_actions(state, legal, engine.cards_by_id)
-    filtered = filter_duplicate_base_entries(filtered)
-    filtered = simplify_seven_actions(filtered)
+    # filtered = filter_redundant_joker_actions(state, legal, engine.cards_by_id)
+    # filtered = filter_duplicate_base_entries(filtered)
+    filtered = simplify_seven_actions(legal)
     filtered = dedupe_actions(filtered, engine.cards_by_id)
     if filtered:
         return tuple(filtered)

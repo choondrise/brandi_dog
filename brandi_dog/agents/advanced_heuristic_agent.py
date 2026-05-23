@@ -73,6 +73,12 @@ class AdvancedHeuristicStats:
     matched_enter_base: int = 0
     matched_capture: int = 0
     matched_progress: int = 0
+    matched_any_safe_entry: int = 0
+    matched_any_enter_base: int = 0
+    matched_any_capture: int = 0
+    matched_any_progress: int = 0
+    seven_simplified_decisions: int = 0
+    seven_actions_removed: int = 0
 
 
 @dataclass(frozen=True)
@@ -120,6 +126,7 @@ class AdvancedHeuristicAgent:
         rng: Optional[random.Random] = None,
         style: str = "balanced",
         top_n_intentions: int = 3,
+        simplify_seven_pawn_threshold: int = 4,
     ):
         if rng is not None and seed is not None:
             raise ValueError("Provide either seed or rng, not both")
@@ -127,10 +134,13 @@ class AdvancedHeuristicAgent:
             raise ValueError("style must be one of: balanced, aggressive, defensive")
         if top_n_intentions <= 0:
             raise ValueError("top_n_intentions must be greater than zero")
+        if simplify_seven_pawn_threshold < 0:
+            raise ValueError("simplify_seven_pawn_threshold must be non-negative")
         self.rng = rng if rng is not None else random.Random(seed)
         self.style = style
         self.weights = STYLE_WEIGHTS[style]
         self.top_n_intentions = top_n_intentions
+        self.simplify_seven_pawn_threshold = simplify_seven_pawn_threshold
         self.stats = AdvancedHeuristicStats()
 
     def select_action(self, engine: GameEngine, state: GameState) -> Action:
@@ -143,7 +153,79 @@ class AdvancedHeuristicAgent:
         return self._select_play_action(engine, state, options, actor)
 
     def candidate_actions(self, engine: GameEngine, state: GameState) -> tuple[Action, ...]:
-        return engine.legal_actions(state)
+        options = engine.legal_actions(state)
+        if state.round_stage != RoundStage.PLAY_LOOP:
+            return options
+        return self._simplify_large_team_sevens(engine, state, options)
+
+    def _simplify_large_team_sevens(
+        self,
+        engine: GameEngine,
+        state: GameState,
+        options: tuple[Action, ...],
+    ) -> tuple[Action, ...]:
+        seven_actions = [action for action in options if isinstance(action, PlaySevenSplitAction)]
+        if not seven_actions:
+            return options
+
+        team = team_of(state.play_current)
+        movable_pawns = self._team_movable_seven_pawns(state, team)
+        if len(movable_pawns) <= self.simplify_seven_pawn_threshold:
+            return options
+
+        non_seven = [action for action in options if not isinstance(action, PlaySevenSplitAction)]
+        simplified = self._single_pawn_seven_actions(engine, state, seven_actions, movable_pawns)
+        if not simplified:
+            return options
+
+        self.stats.seven_simplified_decisions += 1
+        self.stats.seven_actions_removed += max(0, len(seven_actions) - len(simplified))
+        return tuple(non_seven + simplified)
+
+    def _team_movable_seven_pawns(self, state: GameState, team: Team) -> tuple[PawnRef, ...]:
+        return tuple(
+            pawn
+            for player in TEAM_PLAYERS[team]
+            for pawn in player_pawns(player)
+            if get_pawn_position(state, pawn).kind != PositionKind.BASE
+        )
+
+    def _single_pawn_seven_actions(
+        self,
+        engine: GameEngine,
+        state: GameState,
+        seven_actions: list[PlaySevenSplitAction],
+        movable_pawns: tuple[PawnRef, ...],
+    ) -> list[Action]:
+        movable = set(movable_pawns)
+        selected: dict[tuple[int, Rank, PlayerId, PawnRef, bool], PlaySevenSplitAction] = {}
+        for action in seven_actions:
+            if len(action.moves) != 1:
+                continue
+            move = action.moves[0]
+            if move.pawn not in movable or move.steps != 7:
+                continue
+            key = (action.card_id, action.represented_rank, action.player, move.pawn, move.prefer_safe_entry)
+            selected[key] = action
+        return sorted(selected.values(), key=lambda action: (self._action_card_value(engine, action), action.card_id, repr(action)))
+
+    def rank_actions(self, engine: GameEngine, state: GameState, actions: tuple[Action, ...]) -> list[Action]:
+        """Return actions ordered from best to worst by this agent's immediate heuristic score."""
+
+        if state.round_stage == RoundStage.TEAM_SWAPS:
+            actor = active_swap_player(state)
+        else:
+            actor = state.play_current
+        team = team_of(actor)
+        return sorted(
+            list(actions),
+            key=lambda action: (
+                -self._score_action(engine, state, action, team),
+                self._action_card_value(engine, action),
+                self._action_card_id(action),
+                repr(action),
+            ),
+        )
 
     def reset_stats(self) -> None:
         self.stats = AdvancedHeuristicStats()
@@ -160,11 +242,17 @@ class AdvancedHeuristicAgent:
             "fallback_decisions": self.stats.fallback_decisions,
             "intention_match_rate": intention_rate,
             "fallback_rate": fallback_rate,
+            "seven_simplified_decisions": self.stats.seven_simplified_decisions,
+            "seven_actions_removed": self.stats.seven_actions_removed,
             "matched_by_kind": {
                 "safe_entry": self.stats.matched_safe_entry,
                 "enter_base": self.stats.matched_enter_base,
                 "capture": self.stats.matched_capture,
                 "progress": self.stats.matched_progress,
+                "any_safe_entry": self.stats.matched_any_safe_entry,
+                "any_enter_base": self.stats.matched_any_enter_base,
+                "any_capture": self.stats.matched_any_capture,
+                "any_progress": self.stats.matched_any_progress,
             },
         }
 
@@ -202,6 +290,14 @@ class AdvancedHeuristicAgent:
                 self.stats.intention_matched_decisions += 1
                 self._record_intention_match(intention.kind)
                 return self._best_action_by_score(engine, state, matches, team)
+
+        for intention in self._broad_intentions():
+            matches = [action for action in options if self._matches_intention(engine, state, action, intention, team)]
+            if matches:
+                self.stats.intention_matched_decisions += 1
+                self._record_intention_match(intention.kind)
+                return self._best_action_by_score(engine, state, matches, team)
+
         self.stats.fallback_decisions += 1
         return self._best_action_by_score(engine, state, list(options), team)
 
@@ -214,6 +310,22 @@ class AdvancedHeuristicAgent:
             self.stats.matched_capture += 1
         elif kind == "progress":
             self.stats.matched_progress += 1
+        elif kind == "any_safe_entry":
+            self.stats.matched_any_safe_entry += 1
+        elif kind == "any_enter_base":
+            self.stats.matched_any_enter_base += 1
+        elif kind == "any_capture":
+            self.stats.matched_any_capture += 1
+        elif kind == "any_progress":
+            self.stats.matched_any_progress += 1
+
+    def _broad_intentions(self) -> tuple[_Intention, ...]:
+        return (
+            _Intention(kind="any_safe_entry", score=self.weights.safe_entry),
+            _Intention(kind="any_enter_base", score=self.weights.enter_base),
+            _Intention(kind="any_capture", score=self.weights.capture),
+            _Intention(kind="any_progress", score=self.weights.progress),
+        )
 
     def _top_intentions(self, state: GameState, team: Team) -> list[_Intention]:
         intentions: list[_Intention] = []
@@ -274,6 +386,8 @@ class AdvancedHeuristicAgent:
     ) -> bool:
         if intention.kind == "enter_base":
             return isinstance(action, PlayEnterAction) and team_of(action.pawn.owner) == team
+        if intention.kind == "any_enter_base":
+            return isinstance(action, PlayEnterAction) and team_of(action.pawn.owner) == team
 
         if intention.pawn is not None and intention.pawn not in self._moved_pawns(action):
             return False
@@ -291,6 +405,9 @@ class AdvancedHeuristicAgent:
             after = get_pawn_position(next_state, intention.pawn)
             return before.kind != PositionKind.SAFE and after.kind == PositionKind.SAFE
 
+        if intention.kind == "any_safe_entry":
+            return self._safe_entry_gain(state, next_state, team) > 0
+
         if intention.kind == "capture":
             if intention.target is None:
                 return False
@@ -298,9 +415,15 @@ class AdvancedHeuristicAgent:
             after = get_pawn_position(next_state, intention.target)
             return before.kind != PositionKind.BASE and after.kind == PositionKind.BASE
 
+        if intention.kind == "any_capture":
+            return self._capture_count(state, next_state, team) > 0
+
         if intention.kind == "progress":
             assert intention.pawn is not None
             return self._pawn_progress(next_state, intention.pawn) > self._pawn_progress(state, intention.pawn)
+
+        if intention.kind == "any_progress":
+            return self._team_progress(next_state, team) > self._team_progress(state, team)
 
         return False
 
@@ -367,6 +490,20 @@ class AdvancedHeuristicAgent:
 
     def _try_apply_action(self, engine: GameEngine, state: GameState, action: Action) -> Optional[GameState]:
         try:
+            if isinstance(action, SwapCardAction):
+                return engine_rules._apply_swap_action(state, action)
+            if isinstance(action, SkipTurnAction):
+                return engine_rules.apply_action(state, action, engine.cards_by_id)
+            if isinstance(action, DiscardHandAction):
+                return engine_rules._apply_discard_hand_action(state, action)
+            if isinstance(action, PlayEnterAction):
+                return engine_rules._apply_play_enter_action(state, action, engine.cards_by_id)
+            if isinstance(action, PlayStepCardAction):
+                return engine_rules._apply_play_step_action(state, action, engine.cards_by_id)
+            if isinstance(action, PlayJackSwapAction):
+                return engine_rules._apply_play_jack_action(state, action, engine.cards_by_id)
+            if isinstance(action, PlaySevenSplitAction):
+                return engine_rules._apply_play_seven_action(state, action, engine.cards_by_id)
             return engine_rules.apply_action(state, action, engine.cards_by_id)
         except ValueError:
             return None

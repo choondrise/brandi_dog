@@ -50,16 +50,29 @@ def test_joker_cannot_enter_safe_with_last_remaining_pawn() -> None:
 
     joker_state = with_player_hand(base_state, PlayerId.A1, (joker,))
     joker_actions = engine.legal_actions(joker_state)
-    forbidden = any(
+    forbidden_safe_entry = any(
         isinstance(action, PlayStepCardAction)
         and action.card_id == joker
         and action.represented_rank == Rank.TWO
         and action.pawn == last_pawn
         and action.steps == 2
         and action.direction == MoveDirection.FORWARD
+        and action.prefer_safe_entry
         for action in joker_actions
     )
-    assert not forbidden
+    assert not forbidden_safe_entry
+
+    allowed_track_continue = any(
+        isinstance(action, PlayStepCardAction)
+        and action.card_id == joker
+        and action.represented_rank == Rank.TWO
+        and action.pawn == last_pawn
+        and action.steps == 2
+        and action.direction == MoveDirection.FORWARD
+        and not action.prefer_safe_entry
+        for action in joker_actions
+    )
+    assert allowed_track_continue
 
     two_state = with_player_hand(base_state, PlayerId.A1, (two,))
     two_actions = engine.legal_actions(two_state)

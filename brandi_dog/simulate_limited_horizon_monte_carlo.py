@@ -7,7 +7,7 @@ from pathlib import Path
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from brandi_dog.agents import HeuristicAgent, LimitedHorizonMonteCarloAgent, RandomLegalAgent, AdvancedHeuristicAgent
+from brandi_dog.agents import HeuristicAgent, MonteCarloAgent, RandomLegalAgent, AdvancedHeuristicAgent
 from brandi_dog.engine.engine import GameEngine
 from brandi_dog.engine.state import (
     TEAM_PLAYERS,
@@ -48,8 +48,8 @@ def _make_baseline(kind: str, seed: int):
 def _play_single_game(game_seed: int, max_turns: int, baseline: str) -> GameState:
     engine = GameEngine(seed=game_seed)
     agents = {
-        PlayerId.A1: LimitedHorizonMonteCarloAgent(seed=game_seed * 17 + 1, top_k=3, rollouts_per_action=2, rollout_policy="heuristic"),
-        PlayerId.A2: LimitedHorizonMonteCarloAgent(seed=game_seed * 17 + 2, top_k=3, rollouts_per_action=2, rollout_policy="heuristic"),
+        PlayerId.A1: MonteCarloAgent(seed=game_seed * 17 + 1, top_k=3, rollouts_per_action=2, rollout_policy="heuristic"),
+        PlayerId.A2: MonteCarloAgent(seed=game_seed * 17 + 2, top_k=3, rollouts_per_action=2, rollout_policy="heuristic"),
         PlayerId.B1: _make_baseline(baseline, game_seed * 17 + 3),
         PlayerId.B2: _make_baseline(baseline, game_seed * 17 + 4),
     }

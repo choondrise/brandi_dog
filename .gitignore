@@ -1,0 +1,15 @@
+# Project data artifacts
+/data/
+
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Virtual environments
+.venv/
+venv/
+
+# Editor/system files
+.idea/
+.DS_Store

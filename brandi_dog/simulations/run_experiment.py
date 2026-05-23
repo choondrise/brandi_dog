@@ -7,7 +7,9 @@ from pathlib import Path
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from brandi_dog.agents import AdvancedHeuristicAgent, HeuristicAgent, LimitedHorizonMonteCarloAgent
+from brandi_dog.agents.deep_learning_agent import DeepLearningAgent
+
+from brandi_dog.agents import AdvancedHeuristicAgent, HeuristicAgent, MonteCarloAgent, RandomLegalAgent
 from brandi_dog.engine.state import PlayerId
 
 from config import ExperimentConfig
@@ -20,33 +22,36 @@ def build_default_config(
     output_path: Path | None,
     max_turns: int,
 ) -> ExperimentConfig:
+    weights_path = Path(__file__).resolve().parents[2] / "data" / "ranking_model_v2.pt"
     return ExperimentConfig(
-        experiment_name="test_advanced_heuristic_vs_monte_carlo_heuristic",
+        experiment_name="deep_learning_v2_vs_deep_learning_advanced_v2",
         num_games=num_games,
         seed=seed,
         agents_by_player={
-            PlayerId.A1: AdvancedHeuristicAgent(seed=seed * 17 + 1, style='balanced', top_n_intentions=7),
-            PlayerId.B1: HeuristicAgent(seed=seed * 17 + 2),
-            PlayerId.A2: AdvancedHeuristicAgent(
-                seed=seed * 17 + 3, style='balanced', top_n_intentions=7),
-            PlayerId.B2: HeuristicAgent(
-                seed=seed * 17 + 4),
+            PlayerId.A1: DeepLearningAgent(
+                seed=seed * 17 + 1, weights_path='../agents/reinforcement_learning/checkpoints/agent_0/checkpoint_agent_0_final.pt', device='auto'),
+            PlayerId.A2: DeepLearningAgent(
+                seed=seed * 17 + 2, weights_path='../agents/reinforcement_learning/checkpoints/agent_0/checkpoint_agent_0_final.pt', device='auto'),
+            PlayerId.B1: DeepLearningAgent(
+                seed=seed * 17 + 3, weights_path=str(weights_path)),
+            PlayerId.B2: DeepLearningAgent(
+                seed=seed * 17 + 4, weights_path=str(weights_path)),
         },
         output_path=output_path,
         max_turns=max_turns,
-        team_a_label="Advanced heuristic",
-        team_b_label="Monte Carlo",
+        team_a_label="Deep Learning Agent V2",
+        team_b_label="Deep Learning Agent Advanced V2",
     )
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run a deterministic Brandi Dog simulation experiment.")
-    parser.add_argument("--games", type=int, default=3, help="Number of games to simulate.")
+    parser.add_argument("--games", type=int, default=50, help="Number of games to simulate.")
     parser.add_argument("--seed", type=int, default=1, help="Base seed for the experiment.")
     parser.add_argument(
         "--max-turns",
         type=int,
-        default=500,
+        default=1000,
         help="Safety cap for turns per game.",
     )
     parser.add_argument(

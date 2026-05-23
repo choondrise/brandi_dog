@@ -5,13 +5,27 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="f0a1d34b-873a-4e37-a9d5-7e631b3f1f33" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/.idea/MatersThesis.iml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/inspectionProfiles/profiles_settings.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/modules.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/pyproject.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/MatersThesis.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/MatersThesis.iml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/AGENTS.md" beforeDir="false" afterPath="$PROJECT_DIR$/AGENTS.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/brandi_dog/agents/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/brandi_dog/agents/__init__.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/brandi_dog/agents/action_evaluation.py" beforeDir="false" afterPath="$PROJECT_DIR$/brandi_dog/agents/action_evaluation.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/brandi_dog/agents/advanced_heuristic_agent.py" beforeDir="false" afterPath="$PROJECT_DIR$/brandi_dog/agents/advanced_heuristic_agent.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/brandi_dog/agents/limited_horizon_monte_carlo_agent.py" beforeDir="false" afterPath="$PROJECT_DIR$/brandi_dog/agents/monte_carlo_agent.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/brandi_dog/simulate_limited_horizon_monte_carlo.py" beforeDir="false" afterPath="$PROJECT_DIR$/brandi_dog/simulate_limited_horizon_monte_carlo.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/brandi_dog/simulations/data/advanced_heuristic_vs_3_heuristic_games-30_seed-1_20260521_003532.json" beforeDir="false" afterPath="$PROJECT_DIR$/brandi_dog/simulations/data/advanced_heuristic_simulations/advanced_heuristic_vs_3_heuristic_games-30_seed-1_20260521_003532.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/brandi_dog/simulations/data/advanced_heuristic_vs_heuristic_monte_carlo_games-1_seed-2_20260521_002243.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/brandi_dog/simulations/data/advanced_heuristic_vs_monte_carlo_games-30_seed-1_20260521_021542.json" beforeDir="false" afterPath="$PROJECT_DIR$/brandi_dog/simulations/data/monte_carlo_simulations/advanced_heuristic_vs_monte_carlo_games-30_seed-1_20260521_021542.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/brandi_dog/simulations/data/test_advanced_heuristic_vs_monte_carlo_heuristic_games-3_seed-1_20260521_025624.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/brandi_dog/simulations/data/test_advanced_heuristic_vs_monte_carlo_heuristic_games-3_seed-1_20260521_025749.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/brandi_dog/simulations/move_analysis.csv" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/brandi_dog/simulations/run_experiment.py" beforeDir="false" afterPath="$PROJECT_DIR$/brandi_dog/simulations/run_experiment.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/brandi_dog/simulations/simulation_results.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/pyproject.toml" beforeDir="false" afterPath="$PROJECT_DIR$/pyproject.toml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/helpers.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/helpers.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/test_jack_joker_teammate.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_jack_joker_teammate.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests/test_seven_and_capture.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_seven_and_capture.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -19,7 +33,14 @@
     <option name="LAST_RESOLUTION" value="IGNORE" />
   </component>
   <component name="EmbeddingIndexingInfo">
-    <option name="cachedIndexableFilesCount" value="24" />
+    <option name="cachedIndexableFilesCount" value="48" />
+  </component>
+  <component name="FileTemplateManagerImpl">
+    <option name="RECENT_TEMPLATES">
+      <list>
+        <option value="Python Script" />
+      </list>
+    </option>
   </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
@@ -28,9 +49,9 @@
     <commands />
     <urls />
   </component>
-  <component name="ProjectColorInfo"><![CDATA[{
-  "associatedIndex": 4
-}]]></component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 4
+}</component>
   <component name="ProjectId" id="3AB6vpOxXkyNOaO6HyM27kd1JXB" />
   <component name="ProjectViewState">
     <option name="hideEmptyMiddlePackages" value="true" />
@@ -40,18 +61,145 @@
   "keyToString": {
     "ASKED_SHARE_PROJECT_CONFIGURATION_FILES": "true",
     "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "Python.play_human_vs_random.executor": "Run",
+    "Python.run_experiment.executor": "Run",
+    "Python.simulate_heuristic_vs_random.executor": "Run",
+    "Python.simulate_limited_horizon_monte_carlo.executor": "Run",
     "RunOnceActivity.MCP Project settings loaded": "true",
     "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
     "RunOnceActivity.git.unshallow": "true",
+    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
     "SHARE_PROJECT_CONFIGURATION_FILES": "true",
+    "codeWithMe.voiceChat.enabledByDefault": "false",
     "git-widget-placeholder": "master",
-    "settings.editor.selected.configurable": "preferences.pluginManager"
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "settings.editor.selected.configurable": "ml.llm.LLMTrustedDomainsConfigurableProvider"
   }
 }]]></component>
+  <component name="RecentsManager">
+    <key name="MoveFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$/brandi_dog/simulations/data/reinforcement_learning_simulations" />
+      <recent name="$PROJECT_DIR$/brandi_dog/simulations/data/ranking_model_v2_simulations" />
+      <recent name="$PROJECT_DIR$/brandi_dog/simulations/data/ranking_model_v1_simulations" />
+      <recent name="$PROJECT_DIR$/brandi_dog/simulations/data/advanced_heuristic_simulations" />
+      <recent name="$PROJECT_DIR$/brandi_dog/simulations/data/monte_carlo_simulations" />
+    </key>
+  </component>
+  <component name="RunManager" selected="Python.run_experiment">
+    <configuration name="play_human_vs_random" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="MatersThesis" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/brandi_dog" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="DEBUG_JUST_MY_CODE" value="false" />
+      <option name="RUN_TOOL" value="true" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/brandi_dog/play_human_vs_random.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="run_experiment" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="MatersThesis" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/brandi_dog/simulations" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="DEBUG_JUST_MY_CODE" value="false" />
+      <option name="RUN_TOOL" value="" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/brandi_dog/simulations/run_experiment.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="simulate_heuristic_vs_random" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="MatersThesis" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/brandi_dog" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="DEBUG_JUST_MY_CODE" value="false" />
+      <option name="RUN_TOOL" value="" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/brandi_dog/simulate_heuristic_vs_random.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="simulate_limited_horizon_monte_carlo" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="MatersThesis" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/brandi_dog" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="DEBUG_JUST_MY_CODE" value="false" />
+      <option name="RUN_TOOL" value="" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/brandi_dog/simulate_limited_horizon_monte_carlo.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <recent_temporary>
+      <list>
+        <item itemvalue="Python.run_experiment" />
+        <item itemvalue="Python.simulate_heuristic_vs_random" />
+        <item itemvalue="Python.simulate_limited_horizon_monte_carlo" />
+        <item itemvalue="Python.play_human_vs_random" />
+      </list>
+    </recent_temporary>
+  </component>
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
-        <option value="bundled-python-sdk-2653e85de345-6d6dccd035ac-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-253.31033.139" />
+        <option value="bundled-python-sdk-c59985aa861c-c2ffad84badb-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-261.24374.152" />
       </set>
     </attachedChunks>
   </component>
@@ -64,6 +212,9 @@
       <updated>1772053849152</updated>
     </task>
     <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
     <option name="TAB_STATES">

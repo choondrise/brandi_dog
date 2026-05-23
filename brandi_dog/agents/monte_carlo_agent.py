@@ -12,13 +12,13 @@ from brandi_dog.engine.engine import GameEngine
 from brandi_dog.engine.state import GameState, RoundStage, Team, team_of
 
 
-class LimitedHorizonMonteCarloAgent:
+class MonteCarloAgent:
     def __init__(
         self,
         seed: int = 0,
         top_k: int = 3,
-        rollouts_per_action: int = 20,
-        rollout_policy: str = "heuristic",
+        rollouts_per_action: int = 2,
+        rollout_policy: str = "advanced_heuristic",
     ):
         if top_k <= 0:
             raise ValueError("top_k must be greater than zero")

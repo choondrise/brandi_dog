@@ -5,27 +5,10 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="f0a1d34b-873a-4e37-a9d5-7e631b3f1f33" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/MatersThesis.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/MatersThesis.iml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/AGENTS.md" beforeDir="false" afterPath="$PROJECT_DIR$/AGENTS.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/brandi_dog/agents/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/brandi_dog/agents/__init__.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/brandi_dog/agents/action_evaluation.py" beforeDir="false" afterPath="$PROJECT_DIR$/brandi_dog/agents/action_evaluation.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/brandi_dog/agents/advanced_heuristic_agent.py" beforeDir="false" afterPath="$PROJECT_DIR$/brandi_dog/agents/advanced_heuristic_agent.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/brandi_dog/agents/limited_horizon_monte_carlo_agent.py" beforeDir="false" afterPath="$PROJECT_DIR$/brandi_dog/agents/monte_carlo_agent.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/brandi_dog/simulate_limited_horizon_monte_carlo.py" beforeDir="false" afterPath="$PROJECT_DIR$/brandi_dog/simulate_limited_horizon_monte_carlo.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/brandi_dog/simulations/data/advanced_heuristic_vs_3_heuristic_games-30_seed-1_20260521_003532.json" beforeDir="false" afterPath="$PROJECT_DIR$/brandi_dog/simulations/data/advanced_heuristic_simulations/advanced_heuristic_vs_3_heuristic_games-30_seed-1_20260521_003532.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/brandi_dog/simulations/data/advanced_heuristic_vs_heuristic_monte_carlo_games-1_seed-2_20260521_002243.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/brandi_dog/simulations/data/advanced_heuristic_vs_monte_carlo_games-30_seed-1_20260521_021542.json" beforeDir="false" afterPath="$PROJECT_DIR$/brandi_dog/simulations/data/monte_carlo_simulations/advanced_heuristic_vs_monte_carlo_games-30_seed-1_20260521_021542.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/brandi_dog/simulations/data/test_advanced_heuristic_vs_monte_carlo_heuristic_games-3_seed-1_20260521_025624.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/brandi_dog/simulations/data/test_advanced_heuristic_vs_monte_carlo_heuristic_games-3_seed-1_20260521_025749.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/brandi_dog/simulations/move_analysis.csv" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/brandi_dog/agents/reinforcement_learning/checkpoints/agent_0/checkpoint_agent_0_1000.pt" beforeDir="false" afterPath="$PROJECT_DIR$/brandi_dog/agents/reinforcement_learning/checkpoints/agent_0/checkpoint_agent_0_1000.pt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/brandi_dog/agents/reinforcement_learning/checkpoints/agent_0/checkpoint_agent_0_final.pt" beforeDir="false" afterPath="$PROJECT_DIR$/brandi_dog/agents/reinforcement_learning/checkpoints/agent_0/checkpoint_agent_0_final.pt" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/brandi_dog/simulations/run_experiment.py" beforeDir="false" afterPath="$PROJECT_DIR$/brandi_dog/simulations/run_experiment.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/brandi_dog/simulations/simulation_results.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/pyproject.toml" beforeDir="false" afterPath="$PROJECT_DIR$/pyproject.toml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/helpers.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/helpers.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_jack_joker_teammate.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_jack_joker_teammate.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_seven_and_capture.py" beforeDir="false" afterPath="$PROJECT_DIR$/tests/test_seven_and_capture.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />

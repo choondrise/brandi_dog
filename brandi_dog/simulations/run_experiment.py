@@ -24,29 +24,29 @@ def build_default_config(
 ) -> ExperimentConfig:
     weights_path = Path(__file__).resolve().parents[2] / "data" / "ranking_model_v2.pt"
     return ExperimentConfig(
-        experiment_name="deep_learning_v2_vs_deep_learning_advanced_v2",
+        experiment_name="ranking_model_v2_vs_reinforcement_learning_mc_300",
         num_games=num_games,
-        seed=seed,
+        seed=2,
         agents_by_player={
             PlayerId.A1: DeepLearningAgent(
-                seed=seed * 17 + 1, weights_path='../agents/reinforcement_learning/checkpoints/agent_0/checkpoint_agent_0_final.pt', device='auto'),
+                seed=seed * 17 + 1, weights_path=str(weights_path), device='auto'),
             PlayerId.A2: DeepLearningAgent(
-                seed=seed * 17 + 2, weights_path='../agents/reinforcement_learning/checkpoints/agent_0/checkpoint_agent_0_final.pt', device='auto'),
+                seed=seed * 17 + 2, weights_path=str(weights_path), device='auto'),
             PlayerId.B1: DeepLearningAgent(
-                seed=seed * 17 + 3, weights_path=str(weights_path)),
+                seed=seed * 17 + 3, weights_path='../agents/reinforcement_learning/checkpoints/agent_1/checkpoint_agent_1_final.pt', device='auto'),
             PlayerId.B2: DeepLearningAgent(
-                seed=seed * 17 + 4, weights_path=str(weights_path)),
+                seed=seed * 17 + 4, weights_path='../agents/reinforcement_learning/checkpoints/agent_1/checkpoint_agent_1_final.pt', device='auto'),
         },
         output_path=output_path,
         max_turns=max_turns,
-        team_a_label="Deep Learning Agent V2",
-        team_b_label="Deep Learning Agent Advanced V2",
+        team_a_label="Ranking Model V2",
+        team_b_label="Reinforcement Learning MC 300",
     )
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run a deterministic Brandi Dog simulation experiment.")
-    parser.add_argument("--games", type=int, default=50, help="Number of games to simulate.")
+    parser.add_argument("--games", type=int, default=500, help="Number of games to simulate.")
     parser.add_argument("--seed", type=int, default=1, help="Base seed for the experiment.")
     parser.add_argument(
         "--max-turns",

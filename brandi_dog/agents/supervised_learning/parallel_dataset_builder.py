@@ -20,6 +20,11 @@ def build_parallel_dataset(
     candidate_alternatives_per_source: int = 10,
     append: bool = False,
     print_progress: bool = True,
+    expert_agent_type: str = "advanced_heuristic",
+    monte_carlo_top_k: int = 3,
+    monte_carlo_rollouts_per_action: int = 2,
+    monte_carlo_rollout_policy: str = "advanced_heuristic",
+    monte_carlo_rollout_workers: int = 1,
 ) -> DatasetBuildResult:
     """Build dataset shards in independent worker processes and merge them."""
 
@@ -49,6 +54,11 @@ def build_parallel_dataset(
                 "max_samples": sample_splits[worker_id],
                 "candidate_alternatives_per_source": candidate_alternatives_per_source,
                 "print_progress": print_progress,
+                "expert_agent_type": expert_agent_type,
+                "monte_carlo_top_k": monte_carlo_top_k,
+                "monte_carlo_rollouts_per_action": monte_carlo_rollouts_per_action,
+                "monte_carlo_rollout_policy": monte_carlo_rollout_policy,
+                "monte_carlo_rollout_workers": monte_carlo_rollout_workers,
             }
         )
 
@@ -82,6 +92,11 @@ def _build_worker_shard(task: dict) -> DatasetBuildResult:
         candidate_alternatives_per_source=task["candidate_alternatives_per_source"],
         print_progress=task["print_progress"],
         worker_id=task["worker_id"],
+        expert_agent_type=task["expert_agent_type"],
+        monte_carlo_top_k=task["monte_carlo_top_k"],
+        monte_carlo_rollouts_per_action=task["monte_carlo_rollouts_per_action"],
+        monte_carlo_rollout_policy=task["monte_carlo_rollout_policy"],
+        monte_carlo_rollout_workers=task["monte_carlo_rollout_workers"],
     )
 
 
@@ -103,6 +118,11 @@ def main(argv: Optional[Iterable[str]] = None) -> None:
     parser.add_argument("--max-samples", type=int, default=None)
     parser.add_argument("--shard-dir", default=None)
     parser.add_argument("--candidate-alternatives", type=int, default=10)
+    parser.add_argument("--expert-agent", choices=("advanced_heuristic", "monte_carlo"), default="advanced_heuristic")
+    parser.add_argument("--monte-carlo-top-k", type=int, default=3)
+    parser.add_argument("--monte-carlo-rollouts-per-action", type=int, default=2)
+    parser.add_argument("--monte-carlo-rollout-policy", choices=("advanced_heuristic", "heuristic", "random"), default="advanced_heuristic")
+    parser.add_argument("--monte-carlo-rollout-workers", type=int, default=1)
     parser.add_argument("--append", action="store_true", help="Append merged shards to output instead of overwriting it.")
     parser.add_argument("--quiet", action="store_true", help="Do not print per-game worker progress.")
     args = parser.parse_args(argv)
@@ -117,6 +137,11 @@ def main(argv: Optional[Iterable[str]] = None) -> None:
         candidate_alternatives_per_source=args.candidate_alternatives,
         append=args.append,
         print_progress=not args.quiet,
+        expert_agent_type=args.expert_agent,
+        monte_carlo_top_k=args.monte_carlo_top_k,
+        monte_carlo_rollouts_per_action=args.monte_carlo_rollouts_per_action,
+        monte_carlo_rollout_policy=args.monte_carlo_rollout_policy,
+        monte_carlo_rollout_workers=args.monte_carlo_rollout_workers,
     )
     print(result)
 

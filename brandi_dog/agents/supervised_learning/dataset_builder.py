@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 from brandi_dog.agents.advanced_heuristic_agent import AdvancedHeuristicAgent
+from brandi_dog.agents.monte_carlo_agent import MonteCarloAgent
 from brandi_dog.engine.actions import Action
 from brandi_dog.engine.engine import GameEngine
 from brandi_dog.engine.state import (
@@ -28,7 +29,7 @@ class ImitationDatasetBuilder:
     """
 
     def __init__(self, expert_agent_factory=None):
-        self.expert_agent_factory = expert_agent_factory or (lambda seed: AdvancedHeuristicAgent(seed=seed))
+        self.expert_agent_factory = expert_agent_factory
 
     def build(self, config: DatasetBuildConfig) -> DatasetBuildResult:
         output_path = Path(config.output_path)
@@ -44,7 +45,8 @@ class ImitationDatasetBuilder:
                     break
                 game_seed = config.seed + game_index
                 engine = GameEngine(seed=game_seed)
-                expert = self.expert_agent_factory(game_seed)
+                expert = self._build_expert_agent(config, game_seed)
+                hard_negative_ranker = AdvancedHeuristicAgent(seed=game_seed + 50_000_000)
                 state = engine.reset()
                 turn_index = 0
                 games_played += 1
@@ -72,6 +74,7 @@ class ImitationDatasetBuilder:
                                 expert_agent_name=config.expert_agent_name,
                                 rng=random.Random(config.seed * 1_000_003 + game_index * 10_007 + turn_index),
                                 ranking_agent=expert,
+                                fallback_ranking_agent=hard_negative_ranker,
                                 alternatives_per_source=config.candidate_alternatives_per_source,
                             )
                             output_file.write(json.dumps(sample, separators=(",", ":")) + "\n")
@@ -99,6 +102,21 @@ class ImitationDatasetBuilder:
             samples_written=samples_written,
         )
 
+    def _build_expert_agent(self, config: DatasetBuildConfig, seed: int):
+        if self.expert_agent_factory is not None:
+            return self.expert_agent_factory(seed)
+        if config.expert_agent_type == "advanced_heuristic":
+            return AdvancedHeuristicAgent(seed=seed)
+        if config.expert_agent_type == "monte_carlo":
+            return MonteCarloAgent(
+                seed=seed,
+                top_k=config.monte_carlo_top_k,
+                rollouts_per_action=config.monte_carlo_rollouts_per_action,
+                rollout_policy=config.monte_carlo_rollout_policy,
+                rollout_workers=config.monte_carlo_rollout_workers,
+            )
+        raise ValueError(f"Unsupported expert agent type: {config.expert_agent_type}")
+
 
 def build_decision_sample(
     game_id: int,
@@ -110,6 +128,7 @@ def build_decision_sample(
     expert_agent_name: str,
     rng: random.Random,
     ranking_agent=None,
+    fallback_ranking_agent=None,
     alternatives_per_source: int = 10,
 ) -> dict:
     player = state.play_current
@@ -126,6 +145,7 @@ def build_decision_sample(
         expert_action=expert_action,
         rng=rng,
         ranking_agent=ranking_agent,
+        fallback_ranking_agent=fallback_ranking_agent,
         alternatives_per_source=alternatives_per_source,
     )
     candidate_action_ids = [action_ids[action] for action in candidate_actions]
@@ -153,12 +173,15 @@ def select_candidate_actions(
     expert_action: Action,
     rng: random.Random,
     ranking_agent=None,
+    fallback_ranking_agent=None,
     alternatives_per_source: int = 10,
 ) -> list[Action]:
     alternatives_per_source = max(0, min(10, alternatives_per_source))
     non_expert = [action for action in legal_actions if action != expert_action]
 
     rank_actions = getattr(ranking_agent, "rank_actions", None)
+    if not callable(rank_actions):
+        rank_actions = getattr(fallback_ranking_agent, "rank_actions", None)
     if callable(rank_actions):
         ranked = [action for action in rank_actions(engine, state, tuple(non_expert)) if action in non_expert]
     else:
@@ -186,6 +209,11 @@ def build_dataset(
     append: bool = False,
     print_progress: bool = True,
     worker_id: Optional[int] = None,
+    expert_agent_type: str = "advanced_heuristic",
+    monte_carlo_top_k: int = 3,
+    monte_carlo_rollouts_per_action: int = 2,
+    monte_carlo_rollout_policy: str = "advanced_heuristic",
+    monte_carlo_rollout_workers: int = 1,
 ) -> DatasetBuildResult:
     config = DatasetBuildConfig(
         output_path=output_path,
@@ -197,8 +225,22 @@ def build_dataset(
         append=append,
         print_progress=print_progress,
         worker_id=worker_id,
+        expert_agent_type=expert_agent_type,
+        expert_agent_name=_expert_agent_name(expert_agent_type),
+        monte_carlo_top_k=monte_carlo_top_k,
+        monte_carlo_rollouts_per_action=monte_carlo_rollouts_per_action,
+        monte_carlo_rollout_policy=monte_carlo_rollout_policy,
+        monte_carlo_rollout_workers=monte_carlo_rollout_workers,
     )
     return ImitationDatasetBuilder().build(config)
+
+
+def _expert_agent_name(expert_agent_type: str) -> str:
+    if expert_agent_type == "advanced_heuristic":
+        return "AdvancedHeuristicAgent"
+    if expert_agent_type == "monte_carlo":
+        return "MonteCarloAgent"
+    return expert_agent_type
 
 
 def main(argv: Optional[Iterable[str]] = None) -> None:
@@ -209,6 +251,11 @@ def main(argv: Optional[Iterable[str]] = None) -> None:
     parser.add_argument("--max-turns", type=int, default=None)
     parser.add_argument("--max-samples", type=int, default=None)
     parser.add_argument("--candidate-alternatives", type=int, default=10)
+    parser.add_argument("--expert-agent", choices=("advanced_heuristic", "monte_carlo"), default="advanced_heuristic")
+    parser.add_argument("--monte-carlo-top-k", type=int, default=3)
+    parser.add_argument("--monte-carlo-rollouts-per-action", type=int, default=2)
+    parser.add_argument("--monte-carlo-rollout-policy", choices=("advanced_heuristic", "heuristic", "random"), default="advanced_heuristic")
+    parser.add_argument("--monte-carlo-rollout-workers", type=int, default=1)
     parser.add_argument("--append", action="store_true", help="Append samples to output instead of overwriting it.")
     parser.add_argument("--quiet", action="store_true", help="Do not print per-game progress.")
     args = parser.parse_args(argv)
@@ -221,6 +268,11 @@ def main(argv: Optional[Iterable[str]] = None) -> None:
         candidate_alternatives_per_source=args.candidate_alternatives,
         append=args.append,
         print_progress=not args.quiet,
+        expert_agent_type=args.expert_agent,
+        monte_carlo_top_k=args.monte_carlo_top_k,
+        monte_carlo_rollouts_per_action=args.monte_carlo_rollouts_per_action,
+        monte_carlo_rollout_policy=args.monte_carlo_rollout_policy,
+        monte_carlo_rollout_workers=args.monte_carlo_rollout_workers,
     )
     print(result)
 

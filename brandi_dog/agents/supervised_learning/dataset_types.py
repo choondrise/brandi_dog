@@ -16,6 +16,11 @@ class DatasetBuildConfig:
     seed: int = 0
     max_turns: Optional[int] = None
     expert_agent_name: str = "AdvancedHeuristicAgent"
+    expert_agent_type: str = "advanced_heuristic"
+    monte_carlo_top_k: int = 3
+    monte_carlo_rollouts_per_action: int = 2
+    monte_carlo_rollout_policy: str = "advanced_heuristic"
+    monte_carlo_rollout_workers: int = 1
     max_samples: Optional[int] = None
     candidate_alternatives_per_source: int = 10
     append: bool = False

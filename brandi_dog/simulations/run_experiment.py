@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import multiprocessing as mp
 import sys
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 if __package__ in {None, ""}:
@@ -13,7 +15,8 @@ from brandi_dog.agents import AdvancedHeuristicAgent, HeuristicAgent, MonteCarlo
 from brandi_dog.engine.state import PlayerId
 
 from config import ExperimentConfig
-from runner import run_experiment
+from runner import _run_single_game, _write_experiment_result, run_experiment
+from metrics import GameResult, aggregate_game_results
 
 
 def build_default_config(
@@ -22,26 +25,74 @@ def build_default_config(
     output_path: Path | None,
     max_turns: int,
 ) -> ExperimentConfig:
-    weights_path = Path(__file__).resolve().parents[2] / "data" / "ranking_model_v2.pt"
+    root_dir = Path(__file__).resolve().parents[2]
+    weights_path = root_dir / "data" / "rl_finetuned_on_monte_carlo_lr00002_anchor005_epochs1.pt"
+    rl_weights_path_0 = root_dir / "brandi_dog" / "agents" / "reinforcement_learning" / "checkpoints" / "agent_0" / "checkpoint_agent_0_4000.pt"
+    rl_weights_path_1 = root_dir / "brandi_dog" / "agents" / "reinforcement_learning" / "checkpoints" / "agent_0" / "checkpoint_agent_0_final.pt"
     return ExperimentConfig(
-        experiment_name="ranking_model_v2_vs_reinforcement_learning_mc_300",
+        experiment_name="rl_finetuned_epochs1_vs_rl_0_final",
         num_games=num_games,
-        seed=2,
+        seed=seed,
         agents_by_player={
             PlayerId.A1: DeepLearningAgent(
-                seed=seed * 17 + 1, weights_path=str(weights_path), device='auto'),
+                seed=seed * 17 + 1, weights_path=str(weights_path)),
             PlayerId.A2: DeepLearningAgent(
-                seed=seed * 17 + 2, weights_path=str(weights_path), device='auto'),
+                seed=seed * 17 + 2, weights_path=str(weights_path)),
             PlayerId.B1: DeepLearningAgent(
-                seed=seed * 17 + 3, weights_path='../agents/reinforcement_learning/checkpoints/agent_1/checkpoint_agent_1_final.pt', device='auto'),
+                seed=seed * 17 + 3, weights_path=str(rl_weights_path_1)),
             PlayerId.B2: DeepLearningAgent(
-                seed=seed * 17 + 4, weights_path='../agents/reinforcement_learning/checkpoints/agent_1/checkpoint_agent_1_final.pt', device='auto'),
+                seed=seed * 17 + 4, weights_path=str(rl_weights_path_1)),
         },
         output_path=output_path,
         max_turns=max_turns,
-        team_a_label="Ranking Model V2",
-        team_b_label="Reinforcement Learning MC 300",
+        team_a_label="RL Fine tuned Epochs 1",
+        team_b_label="RL 0 Final",
     )
+
+
+def run_parallel_experiment(
+    num_games: int,
+    seed: int,
+    output_path: Path | None,
+    max_turns: int,
+    workers: int,
+):
+    if num_games <= 0:
+        raise ValueError("num_games must be greater than zero")
+    if workers <= 0:
+        raise ValueError("workers must be greater than zero")
+
+    summary_config = build_default_config(num_games, seed, output_path, max_turns)
+    print("Team A: {}, Team B: {}".format(summary_config.team_a_label, summary_config.team_b_label), flush=True)
+    print("Turn cap: {}".format(max_turns if max_turns is not None else "none"), flush=True)
+    print("Workers: {}".format(workers), flush=True)
+
+    indexed_results: list[tuple[int, GameResult] | None] = [None] * num_games
+    # Use spawn so torch/CUDA models can be initialized inside worker processes.
+    mp_context = mp.get_context("spawn")
+    with ProcessPoolExecutor(max_workers=workers, mp_context=mp_context) as executor:
+        futures = {
+            executor.submit(_run_game_worker, game_index, num_games, seed, max_turns): game_index
+            for game_index in range(num_games)
+        }
+        for future in as_completed(futures):
+            game_index, game_result = future.result()
+            indexed_results[game_index] = (game_index, game_result)
+            print("Game {}: {}".format(game_index + 1, game_result.total_score), flush=True)
+
+    game_results = tuple(item[1] for item in indexed_results if item is not None)
+    if len(game_results) != num_games:
+        raise RuntimeError("Parallel experiment finished with missing game results")
+
+    experiment_result = aggregate_game_results(summary_config.experiment_name, game_results)
+    _write_experiment_result(summary_config, experiment_result, game_results)
+    return experiment_result
+
+
+def _run_game_worker(game_index: int, num_games: int, seed: int, max_turns: int | None) -> tuple[int, GameResult]:
+    game_seed = seed + game_index
+    config = build_default_config(1, game_seed, None, max_turns)
+    return game_index, _run_single_game(config, game_seed=game_seed)
 
 
 def main() -> None:
@@ -60,9 +111,18 @@ def main() -> None:
         default=None,
         help="Optional explicit JSON output path. Defaults to simulations/data/<experiment>_...json.",
     )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=6,
+        help="Number of worker processes to use. Use 1 for sequential execution.",
+    )
     args = parser.parse_args()
 
-    result = run_experiment(build_default_config(args.games, args.seed, args.output, args.max_turns))
+    if args.workers == 1:
+        result = run_experiment(build_default_config(args.games, args.seed, args.output, args.max_turns))
+    else:
+        result = run_parallel_experiment(args.games, args.seed, args.output, args.max_turns, args.workers)
     print(result)
 
 

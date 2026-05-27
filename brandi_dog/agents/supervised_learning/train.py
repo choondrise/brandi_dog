@@ -17,6 +17,8 @@ def train_ranking_model(
     device: str = "auto",
     seed: int = 0,
     shuffle: bool = True,
+    initial_model_path: Optional[str] = None,
+    l2_anchor_weight: float = 0.0,
 ) -> None:
     """Train a softmax ranking model over each decision's candidate actions."""
 
@@ -34,7 +36,17 @@ def train_ranking_model(
         raise ValueError("Dataset contains no samples")
 
     feature_dim = int(dataset.get("feature_dim") or candidate_features[0].shape[1])
+    initial_checkpoint = _load_initial_checkpoint(initial_model_path, feature_dim) if initial_model_path else None
+    if initial_checkpoint is not None:
+        hidden_dim = int(initial_checkpoint.get("hidden_dim", hidden_dim))
+
     model = RankingScorer(state_dim=0, action_dim=feature_dim, hidden_dim=hidden_dim).to(train_device)
+    anchor_state = None
+    if initial_checkpoint is not None:
+        model.load_state_dict(initial_checkpoint["model_state"])
+        anchor_state = {key: value.detach().clone().to(train_device) for key, value in model.named_parameters()}
+        print(f"Loaded initial model: {initial_model_path}", flush=True)
+
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     loss_fn = torch.nn.CrossEntropyLoss()
     empty_state = torch.empty(0, dtype=torch.float32, device=train_device)
@@ -43,6 +55,9 @@ def train_ranking_model(
     print(f"Training samples: {len(candidate_features)}", flush=True)
     print(f"Feature dim: {feature_dim}", flush=True)
     print(f"Device: {train_device}", flush=True)
+    print(f"Hidden dim: {hidden_dim}", flush=True)
+    if l2_anchor_weight > 0.0:
+        print(f"L2 anchor weight: {l2_anchor_weight}", flush=True)
 
     for epoch in range(epochs):
         if shuffle:
@@ -55,6 +70,8 @@ def train_ranking_model(
             target = target_indices[sample_index].view(1).to(train_device)
             scores = model(empty_state, action_tensor).unsqueeze(0)
             loss = loss_fn(scores, target)
+            if anchor_state is not None and l2_anchor_weight > 0.0:
+                loss = loss + l2_anchor_weight * _anchor_l2_penalty(model, anchor_state)
 
             optimizer.zero_grad()
             loss.backward()
@@ -83,11 +100,39 @@ def train_ranking_model(
             "state_dim": 0,
             "action_dim": feature_dim,
             "hidden_dim": hidden_dim,
-            "format": "grouped_ranking_v1_scorer",
+            "format": "grouped_ranking_finetuned_scorer" if initial_model_path else "grouped_ranking_v1_scorer",
+            "initial_model_path": initial_model_path,
         },
         output_path,
     )
     print(f"Saved model: {output_path}", flush=True)
+
+
+def _load_initial_checkpoint(initial_model_path: Optional[str], feature_dim: int) -> Optional[dict]:
+    if not initial_model_path:
+        return None
+    checkpoint = torch.load(initial_model_path, map_location="cpu")
+    required = {"model_state", "action_dim"}
+    missing = required.difference(checkpoint)
+    if missing:
+        raise ValueError(f"Initial model checkpoint is missing keys: {sorted(missing)}")
+    checkpoint_dim = int(checkpoint["action_dim"])
+    if checkpoint_dim != feature_dim:
+        raise ValueError(
+            f"Feature dimension mismatch: dataset has {feature_dim}, initial model expects {checkpoint_dim}. "
+            "Use the same encoder version for dataset and checkpoint."
+        )
+    return checkpoint
+
+
+def _anchor_l2_penalty(model, anchor_state: dict) -> object:
+    penalty = None
+    for key, current in model.named_parameters():
+        term = torch.mean((current - anchor_state[key]) ** 2)
+        penalty = term if penalty is None else penalty + term
+    if penalty is None:
+        return torch.tensor(0.0, device=next(model.parameters()).device)
+    return penalty
 
 
 def _load_grouped_pt_dataset(dataset_path: str) -> dict:
@@ -122,6 +167,8 @@ def main(argv: Optional[Iterable[str]] = None) -> None:
     parser.add_argument("--device", default="auto", help="auto, cpu, cuda, cuda:0, ...")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--no-shuffle", action="store_true")
+    parser.add_argument("--initial-model-path", help="Optional existing .pt checkpoint to fine-tune instead of training from scratch.")
+    parser.add_argument("--l2-anchor-weight", type=float, default=0.0, help="Small penalty that keeps fine-tuning weights near the initial checkpoint.")
     args = parser.parse_args(argv)
     train_ranking_model(
         args.dataset,
@@ -132,6 +179,8 @@ def main(argv: Optional[Iterable[str]] = None) -> None:
         device=args.device,
         seed=args.seed,
         shuffle=not args.no_shuffle,
+        initial_model_path=args.initial_model_path,
+        l2_anchor_weight=args.l2_anchor_weight,
     )
 
 

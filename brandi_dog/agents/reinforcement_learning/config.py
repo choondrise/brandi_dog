@@ -32,16 +32,16 @@ class RewardWeights:
     so huge terminal rewards can drown out useful action-level diagnostics.
     """
 
-    win_reward: float = 20.0
-    loss_penalty: float = -20.0
-    team_progress_scale: float = 2.0
-    partner_progress_scale: float = 0.75
-    opponent_progress_scale: float = -1.0
-    safe_entry_reward: float = 3.0
+    win_reward: float = 100.0
+    loss_penalty: float = -100.0
+    team_progress_scale: float = 0.5
+    partner_progress_scale: float = 0.25
+    opponent_progress_scale: float = -0.25
+    safe_entry_reward: float = 5.0
     capture_reward: float = 2.0
-    discard_penalty: float = -0.15
-    sent_back_penalty: float = -3.0
-    terminal_progress_scale: float = 2.0
+    discard_penalty: float = -0.35
+    sent_back_penalty: float = -5.0
+    terminal_progress_scale: float = 1.0
 
 
 @dataclass(frozen=True)

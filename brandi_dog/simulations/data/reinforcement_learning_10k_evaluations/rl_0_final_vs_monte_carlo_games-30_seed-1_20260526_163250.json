@@ -1,0 +1,937 @@
+{
+  "experiment": {
+    "experiment_name": "rl_0_final_vs_monte_carlo",
+    "num_games": 30,
+    "capped_games": 0,
+    "average_game_length": 269.3666666666667,
+    "stddev_game_length": 47.59375542605937,
+    "team_a": {
+      "win_rate": 0.06666666666666667,
+      "average_captures": 2.4,
+      "stddev_captures": 1.5832456116050557,
+      "average_discards": 27.8,
+      "stddev_discards": 11.285388783732708,
+      "average_pawns_in_safe": 4.4,
+      "stddev_pawns_in_safe": 1.6653327995729066
+    },
+    "team_b": {
+      "win_rate": 0.9333333333333333,
+      "average_captures": 7.266666666666667,
+      "stddev_captures": 2.515728301881761,
+      "average_discards": 20.066666666666666,
+      "stddev_discards": 9.309254654494216,
+      "average_pawns_in_safe": 7.866666666666666,
+      "stddev_pawns_in_safe": 0.49888765156985887
+    }
+  },
+  "games": [
+    {
+      "winner": "B",
+      "game_length": 223,
+      "capped": false,
+      "team_a": {
+        "captures": 1,
+        "discards": 19,
+        "pawns_in_safe": 4
+      },
+      "team_b": {
+        "captures": 6,
+        "discards": 19,
+        "pawns_in_safe": 8
+      },
+      "total_score": "4-8",
+      "score_sequence": [
+        "0-1",
+        "0-2",
+        "1-2",
+        "1-3",
+        "1-4",
+        "2-4",
+        "3-4",
+        "3-5",
+        "3-6",
+        "4-6",
+        "4-7",
+        "4-8"
+      ]
+    },
+    {
+      "winner": "A",
+      "game_length": 326,
+      "capped": false,
+      "team_a": {
+        "captures": 5,
+        "discards": 30,
+        "pawns_in_safe": 8
+      },
+      "team_b": {
+        "captures": 7,
+        "discards": 47,
+        "pawns_in_safe": 6
+      },
+      "total_score": "8-6",
+      "score_sequence": [
+        "1-0",
+        "2-0",
+        "3-0",
+        "4-0",
+        "4-1",
+        "4-2",
+        "5-2",
+        "5-3",
+        "6-3",
+        "6-4",
+        "7-4",
+        "7-5",
+        "7-6",
+        "8-6"
+      ]
+    },
+    {
+      "winner": "B",
+      "game_length": 316,
+      "capped": false,
+      "team_a": {
+        "captures": 4,
+        "discards": 36,
+        "pawns_in_safe": 6
+      },
+      "team_b": {
+        "captures": 7,
+        "discards": 21,
+        "pawns_in_safe": 8
+      },
+      "total_score": "6-8",
+      "score_sequence": [
+        "0-1",
+        "1-1",
+        "1-2",
+        "1-3",
+        "1-4",
+        "2-4",
+        "3-4",
+        "4-4",
+        "4-5",
+        "4-6",
+        "5-6",
+        "5-7",
+        "6-7",
+        "6-8"
+      ]
+    },
+    {
+      "winner": "B",
+      "game_length": 357,
+      "capped": false,
+      "team_a": {
+        "captures": 4,
+        "discards": 47,
+        "pawns_in_safe": 4
+      },
+      "team_b": {
+        "captures": 13,
+        "discards": 12,
+        "pawns_in_safe": 8
+      },
+      "total_score": "4-8",
+      "score_sequence": [
+        "0-1",
+        "0-2",
+        "0-3",
+        "1-3",
+        "1-4",
+        "2-4",
+        "3-4",
+        "3-5",
+        "3-6",
+        "4-6",
+        "4-7",
+        "4-8"
+      ]
+    },
+    {
+      "winner": "B",
+      "game_length": 295,
+      "capped": false,
+      "team_a": {
+        "captures": 2,
+        "discards": 39,
+        "pawns_in_safe": 5
+      },
+      "team_b": {
+        "captures": 9,
+        "discards": 36,
+        "pawns_in_safe": 8
+      },
+      "total_score": "5-8",
+      "score_sequence": [
+        "0-1",
+        "1-1",
+        "2-1",
+        "2-2",
+        "2-3",
+        "2-4",
+        "3-4",
+        "4-4",
+        "4-5",
+        "5-5",
+        "5-6",
+        "5-7",
+        "5-8"
+      ]
+    },
+    {
+      "winner": "B",
+      "game_length": 225,
+      "capped": false,
+      "team_a": {
+        "captures": 1,
+        "discards": 30,
+        "pawns_in_safe": 2
+      },
+      "team_b": {
+        "captures": 8,
+        "discards": 16,
+        "pawns_in_safe": 8
+      },
+      "total_score": "2-8",
+      "score_sequence": [
+        "0-1",
+        "1-1",
+        "1-2",
+        "1-3",
+        "1-4",
+        "1-5",
+        "1-6",
+        "1-7",
+        "2-7",
+        "2-8"
+      ]
+    },
+    {
+      "winner": "B",
+      "game_length": 306,
+      "capped": false,
+      "team_a": {
+        "captures": 4,
+        "discards": 18,
+        "pawns_in_safe": 7
+      },
+      "team_b": {
+        "captures": 5,
+        "discards": 29,
+        "pawns_in_safe": 8
+      },
+      "total_score": "7-8",
+      "score_sequence": [
+        "0-1",
+        "1-1",
+        "1-2",
+        "2-2",
+        "2-3",
+        "3-3",
+        "3-4",
+        "4-4",
+        "4-5",
+        "4-6",
+        "5-6",
+        "6-6",
+        "7-6",
+        "7-7",
+        "7-8"
+      ]
+    },
+    {
+      "winner": "B",
+      "game_length": 214,
+      "capped": false,
+      "team_a": {
+        "captures": 0,
+        "discards": 13,
+        "pawns_in_safe": 4
+      },
+      "team_b": {
+        "captures": 6,
+        "discards": 21,
+        "pawns_in_safe": 8
+      },
+      "total_score": "4-8",
+      "score_sequence": [
+        "0-1",
+        "0-2",
+        "0-3",
+        "1-3",
+        "1-4",
+        "1-5",
+        "2-5",
+        "3-5",
+        "3-6",
+        "3-7",
+        "4-7",
+        "4-8"
+      ]
+    },
+    {
+      "winner": "B",
+      "game_length": 274,
+      "capped": false,
+      "team_a": {
+        "captures": 2,
+        "discards": 13,
+        "pawns_in_safe": 6
+      },
+      "team_b": {
+        "captures": 6,
+        "discards": 26,
+        "pawns_in_safe": 8
+      },
+      "total_score": "6-8",
+      "score_sequence": [
+        "0-1",
+        "1-1",
+        "1-2",
+        "1-3",
+        "2-3",
+        "3-3",
+        "4-3",
+        "4-4",
+        "5-4",
+        "5-5",
+        "5-6",
+        "5-7",
+        "6-7",
+        "6-8"
+      ]
+    },
+    {
+      "winner": "B",
+      "game_length": 251,
+      "capped": false,
+      "team_a": {
+        "captures": 4,
+        "discards": 27,
+        "pawns_in_safe": 4
+      },
+      "team_b": {
+        "captures": 10,
+        "discards": 21,
+        "pawns_in_safe": 8
+      },
+      "total_score": "4-8",
+      "score_sequence": [
+        "1-0",
+        "1-1",
+        "2-1",
+        "3-1",
+        "3-2",
+        "3-3",
+        "3-4",
+        "3-5",
+        "4-5",
+        "4-6",
+        "4-7",
+        "4-8"
+      ]
+    },
+    {
+      "winner": "B",
+      "game_length": 295,
+      "capped": false,
+      "team_a": {
+        "captures": 4,
+        "discards": 28,
+        "pawns_in_safe": 6
+      },
+      "team_b": {
+        "captures": 8,
+        "discards": 25,
+        "pawns_in_safe": 8
+      },
+      "total_score": "6-8",
+      "score_sequence": [
+        "1-0",
+        "1-1",
+        "1-2",
+        "2-2",
+        "2-3",
+        "2-4",
+        "2-5",
+        "3-5",
+        "3-6",
+        "4-6",
+        "5-6",
+        "5-7",
+        "6-7",
+        "6-8"
+      ]
+    },
+    {
+      "winner": "B",
+      "game_length": 201,
+      "capped": false,
+      "team_a": {
+        "captures": 2,
+        "discards": 31,
+        "pawns_in_safe": 3
+      },
+      "team_b": {
+        "captures": 7,
+        "discards": 9,
+        "pawns_in_safe": 8
+      },
+      "total_score": "3-8",
+      "score_sequence": [
+        "0-1",
+        "1-1",
+        "1-2",
+        "1-3",
+        "1-4",
+        "2-4",
+        "2-5",
+        "2-6",
+        "3-6",
+        "3-7",
+        "3-8"
+      ]
+    },
+    {
+      "winner": "B",
+      "game_length": 274,
+      "capped": false,
+      "team_a": {
+        "captures": 2,
+        "discards": 39,
+        "pawns_in_safe": 5
+      },
+      "team_b": {
+        "captures": 5,
+        "discards": 24,
+        "pawns_in_safe": 8
+      },
+      "total_score": "5-8",
+      "score_sequence": [
+        "0-1",
+        "1-1",
+        "2-1",
+        "2-2",
+        "3-2",
+        "3-3",
+        "3-4",
+        "3-5",
+        "3-6",
+        "3-7",
+        "4-7",
+        "5-7",
+        "5-8"
+      ]
+    },
+    {
+      "winner": "B",
+      "game_length": 296,
+      "capped": false,
+      "team_a": {
+        "captures": 2,
+        "discards": 17,
+        "pawns_in_safe": 5
+      },
+      "team_b": {
+        "captures": 8,
+        "discards": 20,
+        "pawns_in_safe": 8
+      },
+      "total_score": "5-8",
+      "score_sequence": [
+        "1-0",
+        "1-1",
+        "1-2",
+        "2-2",
+        "2-3",
+        "2-4",
+        "2-5",
+        "3-5",
+        "3-6",
+        "4-6",
+        "5-6",
+        "5-7",
+        "5-8"
+      ]
+    },
+    {
+      "winner": "B",
+      "game_length": 284,
+      "capped": false,
+      "team_a": {
+        "captures": 4,
+        "discards": 15,
+        "pawns_in_safe": 3
+      },
+      "team_b": {
+        "captures": 8,
+        "discards": 20,
+        "pawns_in_safe": 8
+      },
+      "total_score": "3-8",
+      "score_sequence": [
+        "0-1",
+        "0-2",
+        "1-2",
+        "1-3",
+        "2-3",
+        "2-4",
+        "2-5",
+        "3-5",
+        "3-6",
+        "3-7",
+        "3-8"
+      ]
+    },
+    {
+      "winner": "B",
+      "game_length": 218,
+      "capped": false,
+      "team_a": {
+        "captures": 1,
+        "discards": 25,
+        "pawns_in_safe": 2
+      },
+      "team_b": {
+        "captures": 6,
+        "discards": 11,
+        "pawns_in_safe": 8
+      },
+      "total_score": "2-8",
+      "score_sequence": [
+        "0-1",
+        "0-2",
+        "0-3",
+        "1-3",
+        "1-4",
+        "1-5",
+        "1-6",
+        "1-7",
+        "2-7",
+        "2-8"
+      ]
+    },
+    {
+      "winner": "B",
+      "game_length": 218,
+      "capped": false,
+      "team_a": {
+        "captures": 1,
+        "discards": 8,
+        "pawns_in_safe": 4
+      },
+      "team_b": {
+        "captures": 6,
+        "discards": 14,
+        "pawns_in_safe": 8
+      },
+      "total_score": "4-8",
+      "score_sequence": [
+        "1-0",
+        "1-1",
+        "1-2",
+        "2-2",
+        "2-3",
+        "3-3",
+        "3-4",
+        "3-5",
+        "4-5",
+        "4-6",
+        "4-7",
+        "4-8"
+      ]
+    },
+    {
+      "winner": "B",
+      "game_length": 256,
+      "capped": false,
+      "team_a": {
+        "captures": 1,
+        "discards": 34,
+        "pawns_in_safe": 4
+      },
+      "team_b": {
+        "captures": 7,
+        "discards": 8,
+        "pawns_in_safe": 8
+      },
+      "total_score": "4-8",
+      "score_sequence": [
+        "0-1",
+        "1-1",
+        "1-2",
+        "1-3",
+        "2-3",
+        "2-4",
+        "2-5",
+        "3-5",
+        "3-6",
+        "4-6",
+        "4-7",
+        "4-8"
+      ]
+    },
+    {
+      "winner": "B",
+      "game_length": 333,
+      "capped": false,
+      "team_a": {
+        "captures": 3,
+        "discards": 29,
+        "pawns_in_safe": 4
+      },
+      "team_b": {
+        "captures": 11,
+        "discards": 22,
+        "pawns_in_safe": 8
+      },
+      "total_score": "4-8",
+      "score_sequence": [
+        "0-1",
+        "1-1",
+        "1-2",
+        "1-3",
+        "1-4",
+        "2-4",
+        "3-4",
+        "3-5",
+        "3-6",
+        "3-7",
+        "4-7",
+        "4-8"
+      ]
+    },
+    {
+      "winner": "A",
+      "game_length": 305,
+      "capped": false,
+      "team_a": {
+        "captures": 5,
+        "discards": 22,
+        "pawns_in_safe": 8
+      },
+      "team_b": {
+        "captures": 6,
+        "discards": 34,
+        "pawns_in_safe": 6
+      },
+      "total_score": "8-6",
+      "score_sequence": [
+        "1-0",
+        "1-1",
+        "2-1",
+        "3-1",
+        "3-2",
+        "3-3",
+        "4-3",
+        "4-4",
+        "4-5",
+        "5-5",
+        "5-6",
+        "6-6",
+        "7-6",
+        "8-6"
+      ]
+    },
+    {
+      "winner": "B",
+      "game_length": 247,
+      "capped": false,
+      "team_a": {
+        "captures": 0,
+        "discards": 21,
+        "pawns_in_safe": 5
+      },
+      "team_b": {
+        "captures": 3,
+        "discards": 25,
+        "pawns_in_safe": 8
+      },
+      "total_score": "5-8",
+      "score_sequence": [
+        "1-0",
+        "2-0",
+        "2-1",
+        "2-2",
+        "2-3",
+        "3-3",
+        "4-3",
+        "4-4",
+        "4-5",
+        "4-6",
+        "5-6",
+        "5-7",
+        "5-8"
+      ]
+    },
+    {
+      "winner": "B",
+      "game_length": 355,
+      "capped": false,
+      "team_a": {
+        "captures": 5,
+        "discards": 48,
+        "pawns_in_safe": 3
+      },
+      "team_b": {
+        "captures": 13,
+        "discards": 15,
+        "pawns_in_safe": 8
+      },
+      "total_score": "3-8",
+      "score_sequence": [
+        "1-0",
+        "1-1",
+        "1-2",
+        "2-2",
+        "3-2",
+        "3-3",
+        "3-4",
+        "3-5",
+        "3-6",
+        "3-7",
+        "3-8"
+      ]
+    },
+    {
+      "winner": "B",
+      "game_length": 266,
+      "capped": false,
+      "team_a": {
+        "captures": 3,
+        "discards": 33,
+        "pawns_in_safe": 4
+      },
+      "team_b": {
+        "captures": 9,
+        "discards": 15,
+        "pawns_in_safe": 8
+      },
+      "total_score": "4-8",
+      "score_sequence": [
+        "1-0",
+        "1-1",
+        "1-2",
+        "2-2",
+        "2-3",
+        "3-3",
+        "3-4",
+        "3-5",
+        "3-6",
+        "3-7",
+        "4-7",
+        "4-8"
+      ]
+    },
+    {
+      "winner": "B",
+      "game_length": 285,
+      "capped": false,
+      "team_a": {
+        "captures": 1,
+        "discards": 19,
+        "pawns_in_safe": 7
+      },
+      "team_b": {
+        "captures": 8,
+        "discards": 27,
+        "pawns_in_safe": 8
+      },
+      "total_score": "7-8",
+      "score_sequence": [
+        "1-0",
+        "1-1",
+        "1-2",
+        "1-3",
+        "2-3",
+        "2-4",
+        "3-4",
+        "4-4",
+        "4-5",
+        "4-6",
+        "5-6",
+        "6-6",
+        "6-7",
+        "7-7",
+        "7-8"
+      ]
+    },
+    {
+      "winner": "B",
+      "game_length": 282,
+      "capped": false,
+      "team_a": {
+        "captures": 4,
+        "discards": 21,
+        "pawns_in_safe": 5
+      },
+      "team_b": {
+        "captures": 8,
+        "discards": 22,
+        "pawns_in_safe": 8
+      },
+      "total_score": "5-8",
+      "score_sequence": [
+        "1-0",
+        "1-1",
+        "1-2",
+        "1-3",
+        "2-3",
+        "2-4",
+        "3-4",
+        "3-5",
+        "4-5",
+        "4-6",
+        "5-6",
+        "5-7",
+        "5-8"
+      ]
+    },
+    {
+      "winner": "B",
+      "game_length": 304,
+      "capped": false,
+      "team_a": {
+        "captures": 3,
+        "discards": 44,
+        "pawns_in_safe": 4
+      },
+      "team_b": {
+        "captures": 10,
+        "discards": 15,
+        "pawns_in_safe": 8
+      },
+      "total_score": "4-8",
+      "score_sequence": [
+        "0-1",
+        "0-2",
+        "0-3",
+        "0-4",
+        "0-5",
+        "0-6",
+        "1-6",
+        "2-6",
+        "3-6",
+        "4-6",
+        "4-7",
+        "4-8"
+      ]
+    },
+    {
+      "winner": "B",
+      "game_length": 159,
+      "capped": false,
+      "team_a": {
+        "captures": 0,
+        "discards": 44,
+        "pawns_in_safe": 2
+      },
+      "team_b": {
+        "captures": 2,
+        "discards": 2,
+        "pawns_in_safe": 8
+      },
+      "total_score": "2-8",
+      "score_sequence": [
+        "0-1",
+        "0-2",
+        "0-3",
+        "0-4",
+        "1-4",
+        "1-5",
+        "1-6",
+        "2-6",
+        "2-7",
+        "2-8"
+      ]
+    },
+    {
+      "winner": "B",
+      "game_length": 189,
+      "capped": false,
+      "team_a": {
+        "captures": 0,
+        "discards": 48,
+        "pawns_in_safe": 3
+      },
+      "team_b": {
+        "captures": 3,
+        "discards": 7,
+        "pawns_in_safe": 8
+      },
+      "total_score": "3-8",
+      "score_sequence": [
+        "0-1",
+        "0-2",
+        "1-2",
+        "1-3",
+        "1-4",
+        "1-5",
+        "2-5",
+        "3-5",
+        "3-6",
+        "3-7",
+        "3-8"
+      ]
+    },
+    {
+      "winner": "B",
+      "game_length": 255,
+      "capped": false,
+      "team_a": {
+        "captures": 2,
+        "discards": 15,
+        "pawns_in_safe": 2
+      },
+      "team_b": {
+        "captures": 7,
+        "discards": 11,
+        "pawns_in_safe": 8
+      },
+      "total_score": "2-8",
+      "score_sequence": [
+        "0-1",
+        "1-1",
+        "1-2",
+        "1-3",
+        "1-4",
+        "1-5",
+        "1-6",
+        "1-7",
+        "2-7",
+        "2-8"
+      ]
+    },
+    {
+      "winner": "B",
+      "game_length": 272,
+      "capped": false,
+      "team_a": {
+        "captures": 2,
+        "discards": 21,
+        "pawns_in_safe": 3
+      },
+      "team_b": {
+        "captures": 6,
+        "discards": 28,
+        "pawns_in_safe": 8
+      },
+      "total_score": "3-8",
+      "score_sequence": [
+        "0-1",
+        "0-2",
+        "0-3",
+        "0-4",
+        "0-5",
+        "1-5",
+        "2-5",
+        "3-5",
+        "3-6",
+        "3-7",
+        "3-8"
+      ]
+    }
+  ]
+}

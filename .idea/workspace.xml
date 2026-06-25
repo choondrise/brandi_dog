@@ -6,25 +6,8 @@
   <component name="ChangeListManager">
     <list default="true" id="f0a1d34b-873a-4e37-a9d5-7e631b3f1f33" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/brandi_dog/agents/monte_carlo_agent.py" beforeDir="false" afterPath="$PROJECT_DIR$/brandi_dog/agents/monte_carlo_agent.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/brandi_dog/agents/reinforcement_learning/checkpoints/agent_0/checkpoint_agent_0_1000.pt" beforeDir="false" afterPath="$PROJECT_DIR$/brandi_dog/agents/reinforcement_learning/checkpoints/agent_0/checkpoint_agent_0_1000.pt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/brandi_dog/agents/reinforcement_learning/checkpoints/agent_0/checkpoint_agent_0_2000.pt" beforeDir="false" afterPath="$PROJECT_DIR$/brandi_dog/agents/reinforcement_learning/checkpoints/agent_0/checkpoint_agent_0_2000.pt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/brandi_dog/agents/reinforcement_learning/checkpoints/agent_0/checkpoint_agent_0_3000.pt" beforeDir="false" afterPath="$PROJECT_DIR$/brandi_dog/agents/reinforcement_learning/checkpoints/agent_0/checkpoint_agent_0_3000.pt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/brandi_dog/agents/reinforcement_learning/checkpoints/agent_0/checkpoint_agent_0_final.pt" beforeDir="false" afterPath="$PROJECT_DIR$/brandi_dog/agents/reinforcement_learning/checkpoints/agent_0/checkpoint_agent_0_0_final.pt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/brandi_dog/agents/reinforcement_learning/config.py" beforeDir="false" afterPath="$PROJECT_DIR$/brandi_dog/agents/reinforcement_learning/config.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/brandi_dog/agents/reinforcement_learning/train_rl.py" beforeDir="false" afterPath="$PROJECT_DIR$/brandi_dog/agents/reinforcement_learning/train_rl.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/brandi_dog/agents/supervised_learning/dataset_builder.py" beforeDir="false" afterPath="$PROJECT_DIR$/brandi_dog/agents/supervised_learning/dataset_builder.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/brandi_dog/agents/supervised_learning/dataset_types.py" beforeDir="false" afterPath="$PROJECT_DIR$/brandi_dog/agents/supervised_learning/dataset_types.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/brandi_dog/agents/supervised_learning/parallel_dataset_builder.py" beforeDir="false" afterPath="$PROJECT_DIR$/brandi_dog/agents/supervised_learning/parallel_dataset_builder.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/brandi_dog/agents/supervised_learning/train.py" beforeDir="false" afterPath="$PROJECT_DIR$/brandi_dog/agents/supervised_learning/train.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/brandi_dog/simulations/data/BASELINE_ranking_model_v2_vs_advanced_heuristic_games-500_seed-1001_20260523_191401.json" beforeDir="false" afterPath="$PROJECT_DIR$/brandi_dog/simulations/data/ranking_model_v2_simulations/BASELINE_ranking_model_v2_vs_advanced_heuristic_games-500_seed-1001_20260523_191401.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/brandi_dog/simulations/data/advanced_heuristic_vs_deep_learning_model_advanced_v2_games-50_seed-1_20260522_202045.json" beforeDir="false" afterPath="$PROJECT_DIR$/brandi_dog/simulations/data/ranking_model_v2_simulations/advanced_heuristic_vs_deep_learning_model_advanced_v2_games-50_seed-1_20260522_202045.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/brandi_dog/simulations/data/deep_learning_v2_vs_deep_learning_advanced_v2_games-50_seed-1024_20260523_050225.json" beforeDir="false" afterPath="$PROJECT_DIR$/brandi_dog/simulations/data/ranking_model_v2_simulations/deep_learning_v2_vs_deep_learning_advanced_v2_games-50_seed-1024_20260523_050225.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/brandi_dog/simulations/data/deep_learning_v2_vs_deep_learning_advanced_v2_games-50_seed-1_20260522_202747.json" beforeDir="false" afterPath="$PROJECT_DIR$/brandi_dog/simulations/data/ranking_model_v2_simulations/deep_learning_v2_vs_deep_learning_advanced_v2_games-50_seed-1_20260522_202747.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/brandi_dog/simulations/data/ranking_model_v2_vs_reinforcement_learning_v3_games-500_seed-1001_20260523_192146.json" beforeDir="false" afterPath="$PROJECT_DIR$/brandi_dog/simulations/data/reinforcement_learning_v2_v3/ranking_model_v2_vs_reinforcement_learning_v3_games-500_seed-1001_20260523_192146.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/brandi_dog/simulations/data/reinforcement_learning_v2_vs_advanced_heuristic_games-50_seed-1_20260523_045313.json" beforeDir="false" afterPath="$PROJECT_DIR$/brandi_dog/simulations/data/reinforcement_learning_v2_v3/reinforcement_learning_v2_vs_advanced_heuristic_games-50_seed-1_20260523_045313.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/brandi_dog/simulations/data/reinforcement_learning_v3_vs_advanced_heuristic_games-500_seed-1000_20260523_181459.json" beforeDir="false" afterPath="$PROJECT_DIR$/brandi_dog/simulations/data/reinforcement_learning_v2_v3/reinforcement_learning_v3_vs_advanced_heuristic_games-500_seed-1000_20260523_181459.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/brandi_dog/simulations/data/reinforcement_learning_v3_vs_deep_learning_v2_games-500_seed-1000_20260523_150713.json" beforeDir="false" afterPath="$PROJECT_DIR$/brandi_dog/simulations/data/reinforcement_learning_v2_v3/reinforcement_learning_v3_vs_deep_learning_v2_games-500_seed-1000_20260523_150713.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/brandi_dog/agents/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/brandi_dog/agents/__init__.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/brandi_dog/agents/self_play/self_play_train.py" beforeDir="false" afterPath="$PROJECT_DIR$/brandi_dog/agents/self_play/self_play_train.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/brandi_dog/simulations/run_experiment.py" beforeDir="false" afterPath="$PROJECT_DIR$/brandi_dog/simulations/run_experiment.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -57,37 +40,38 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "ASKED_SHARE_PROJECT_CONFIGURATION_FILES": "true",
-    "ModuleVcsDetector.initialDetectionPerformed": "true",
-    "Python.play_human_vs_random.executor": "Run",
-    "Python.run_experiment.executor": "Run",
-    "Python.simulate_heuristic_vs_random.executor": "Run",
-    "Python.simulate_limited_horizon_monte_carlo.executor": "Run",
-    "RunOnceActivity.MCP Project settings loaded": "true",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
-    "RunOnceActivity.git.unshallow": "true",
-    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
-    "SHARE_PROJECT_CONFIGURATION_FILES": "true",
-    "codeWithMe.voiceChat.enabledByDefault": "false",
-    "git-widget-placeholder": "master",
-    "node.js.detected.package.eslint": "true",
-    "node.js.detected.package.tslint": "true",
-    "node.js.selected.package.eslint": "(autodetect)",
-    "node.js.selected.package.tslint": "(autodetect)",
-    "nodejs_package_manager_path": "npm",
-    "settings.editor.selected.configurable": "ml.llm.LLMTrustedDomainsConfigurableProvider"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;ASKED_SHARE_PROJECT_CONFIGURATION_FILES&quot;: &quot;true&quot;,
+    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;Python.play_human_vs_random.executor&quot;: &quot;Run&quot;,
+    &quot;Python.run_experiment.executor&quot;: &quot;Run&quot;,
+    &quot;Python.simulate_heuristic_vs_random.executor&quot;: &quot;Run&quot;,
+    &quot;Python.simulate_limited_horizon_monte_carlo.executor&quot;: &quot;Run&quot;,
+    &quot;RunOnceActivity.MCP Project settings loaded&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.typescript.service.memoryLimit.init&quot;: &quot;true&quot;,
+    &quot;SHARE_PROJECT_CONFIGURATION_FILES&quot;: &quot;true&quot;,
+    &quot;codeWithMe.voiceChat.enabledByDefault&quot;: &quot;false&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;master&quot;,
+    &quot;last_opened_file_path&quot;: &quot;/home/choondrise/Documents/WeldInspect&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;ml.llm.LLMTrustedDomainsConfigurableProvider&quot;
   }
-}]]></component>
+}</component>
   <component name="RecentsManager">
     <key name="MoveFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$/brandi_dog/simulations/data/masters_thesis_simulations" />
       <recent name="$PROJECT_DIR$/brandi_dog/simulations/data/rl_finetuned_simulations" />
       <recent name="$PROJECT_DIR$/brandi_dog/simulations/data/reinforcement_learning_v2_v3" />
       <recent name="$PROJECT_DIR$/brandi_dog/simulations/data/ranking_model_v2_simulations" />
       <recent name="$PROJECT_DIR$/brandi_dog/simulations/data/monte_carlo_simulations" />
-      <recent name="$PROJECT_DIR$/brandi_dog/simulations/data/reinforcement_learning_10k_evaluations" />
     </key>
   </component>
   <component name="RunManager" selected="Python.run_experiment">
@@ -190,9 +174,9 @@
     <recent_temporary>
       <list>
         <item itemvalue="Python.run_experiment" />
+        <item itemvalue="Python.play_human_vs_random" />
         <item itemvalue="Python.simulate_heuristic_vs_random" />
         <item itemvalue="Python.simulate_limited_horizon_monte_carlo" />
-        <item itemvalue="Python.play_human_vs_random" />
       </list>
     </recent_temporary>
   </component>

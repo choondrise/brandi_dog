@@ -11,7 +11,8 @@ if __package__ in {None, ""}:
 
 from brandi_dog.agents.deep_learning_agent import DeepLearningAgent
 
-from brandi_dog.agents import AdvancedHeuristicAgent, HeuristicAgent, MonteCarloAgent, RandomLegalAgent
+from brandi_dog.agents import AdvancedHeuristicAgent, HeuristicAgent, MonteCarloAgent, RandomLegalAgent, \
+    ImperfectInformationMonteCarloAgent
 from brandi_dog.engine.state import PlayerId
 
 from config import ExperimentConfig
@@ -27,26 +28,27 @@ def build_default_config(
 ) -> ExperimentConfig:
     root_dir = Path(__file__).resolve().parents[2]
     weights_path = root_dir / "data" / "rl_finetuned_on_monte_carlo_lr00002_anchor005_epochs1.pt"
+    checkpoint_1 = root_dir / "runs" / "self_play_league" / "checkpoints" / "candidates" / "candidate_iter_1.pt"
     rl_weights_path_0 = root_dir / "brandi_dog" / "agents" / "reinforcement_learning" / "checkpoints" / "agent_0" / "checkpoint_agent_0_4000.pt"
     rl_weights_path_1 = root_dir / "brandi_dog" / "agents" / "reinforcement_learning" / "checkpoints" / "agent_0" / "checkpoint_agent_0_final.pt"
     return ExperimentConfig(
-        experiment_name="rl_finetuned_epochs1_vs_rl_0_final",
+        experiment_name="advanced_heuristic_+_random_vs_random_legal",
         num_games=num_games,
         seed=seed,
         agents_by_player={
-            PlayerId.A1: DeepLearningAgent(
-                seed=seed * 17 + 1, weights_path=str(weights_path)),
-            PlayerId.A2: DeepLearningAgent(
-                seed=seed * 17 + 2, weights_path=str(weights_path)),
-            PlayerId.B1: DeepLearningAgent(
-                seed=seed * 17 + 3, weights_path=str(rl_weights_path_1)),
-            PlayerId.B2: DeepLearningAgent(
-                seed=seed * 17 + 4, weights_path=str(rl_weights_path_1)),
+            PlayerId.A1: AdvancedHeuristicAgent(
+                seed=seed * 17 + 1),
+            PlayerId.A2: RandomLegalAgent(
+                seed=seed * 17 + 2),
+            PlayerId.B1: RandomLegalAgent(
+                seed=seed * 17 + 3),
+            PlayerId.B2: RandomLegalAgent(
+                seed=seed * 17 + 4),
         },
         output_path=output_path,
         max_turns=max_turns,
-        team_a_label="RL Fine tuned Epochs 1",
-        team_b_label="RL 0 Final",
+        team_a_label="Advanced Heuristic + Random",
+        team_b_label="Random + Random",
     )
 
 
@@ -97,7 +99,7 @@ def _run_game_worker(game_index: int, num_games: int, seed: int, max_turns: int 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run a deterministic Brandi Dog simulation experiment.")
-    parser.add_argument("--games", type=int, default=500, help="Number of games to simulate.")
+    parser.add_argument("--games", type=int, default=1000, help="Number of games to simulate.")
     parser.add_argument("--seed", type=int, default=1, help="Base seed for the experiment.")
     parser.add_argument(
         "--max-turns",

@@ -1,0 +1,222 @@
+U nastavku je opisana implementacija encoder-a V2, ranking modela i policy-gradient fine-tuning postupka.
+
+Encoder V2
+----------
+
+Koristi se `PartialInfoPerspectiveEncoderV2`. Ukupni ulazni vektor po kandidatskoj akciji ima 270 dimenzija:
+
+state features: 222
+action features: 48
+ukupno: 270
+
+Encoder V2 koristi perspektivu aktivnog igraca, a ne apsolutne timove ili sjedala. Igraci se mapiraju relativno:
+
+self = aktivni igrac
+partner = (aktivni + 2) % 4
+opponent_1 = (aktivni + 1) % 4
+opponent_2 = (aktivni + 3) % 4
+
+Time se smanjuje ovisnost modela o konkretnom sjedalu igraca. Isti tip pozicije trebao bi imati slicno znacenje neovisno o tome igra li model kao A1, B1, A2 ili B2.
+
+Znacajke stanja ukljucuju:
+
+- deal_round_index / 20
+- active_deal_size / 6
+- broj karata aktivnog igraca / 6
+- rank-count vektor za ruku aktivnog igraca, 14 rankova, svaki broj karata podijeljen s 4
+- broj karata partnera i oba protivnika, ali samo count, ne konkretne karte
+- za svaku ulogu self, partner, opponent_1, opponent_2:
+  - broj figura u BASE, TRACK i SAFE
+  - minimum, maksimum, prosjek i raspon progress vrijednosti
+  - udio figura blizu cilja, tj. progress >= 0.85
+  - udio figura kojima je safe_entry_ready
+- agregirani timski progress:
+  - self total
+  - partner total
+  - ukupni protivnicki progress
+  - team total
+  - enemy total
+  - razlika team - enemy
+- za svaku od 16 figura:
+  - role one-hot: self, partner, opponent_1, opponent_2
+  - position-kind one-hot: BASE, TRACK, SAFE
+  - relativna track pozicija u odnosu na start aktivnog igraca
+  - progress u odnosu na vlasnika figure
+  - safe_entry_ready
+
+Kodiranje pozicija figura
+------------------------
+
+Pozicije se kodiraju kombinacijom kategorijskih i numerickih znacajki.
+
+Position kind se kodira one-hot vektorom:
+
+BASE, TRACK, SAFE
+
+Za figure na BASE poziciji progress je 0.0, a relativna track pozicija je -1.0 jer figura nije na glavnoj stazi.
+
+Za figure na TRACK poziciji koristi se relativna pozicija:
+
+(track_index - entry_index(active_player)) % 64 / 64
+
+To znaci da se track indeks normalizira iz perspektive aktivnog igraca.
+
+Osim toga racuna se i owner progress, tj. progress figure iz perspektive vlasnika:
+
+(track_index - entry_index(owner)) % 64 / 64
+
+Za figure u SAFE zoni progress se kodira kao:
+
+1.0 + safe_index / 4
+
+Tako SAFE pozicije imaju vecu vrijednost od TRACK pozicija, cime model dobiva informaciju da je figura vec usla u zavrsnu zonu.
+
+Kodiranje karata
+----------------
+
+Karte se kodiraju po ranku, kao one-hot vektor od 14 dimenzija:
+
+2, 3, 4, 5, 6, 7, 8, 9, 10, J, Q, K, A, JK
+
+Za aktivnog igraca encoder koristi konkretne karte u ruci i pretvara ih u rank-count vektor. Svaki count se dijeli s 4.
+
+Za partnera i protivnike encoder V2 ne koristi konkretne skrivene karte. Koristi samo broj karata u ruci. To je vazno jer agent ne bi smio imati savrsenu informaciju o kartama drugih igraca.
+
+Kodiranje akcija
+----------------
+
+Svaka kandidatska akcija ima zaseban action-feature vektor od 48 dimenzija.
+
+Akcijske znacajke ukljucuju:
+
+- tip akcije one-hot:
+  - SwapCardAction
+  - PlayStepCardAction
+  - PlayEnterAction
+  - PlaySevenSplitAction
+  - PlayJackSwapAction
+  - DiscardHandAction
+  - SkipTurnAction
+- rank karte one-hot, 14 dimenzija
+- flagove:
+  - is_capture
+  - is_discard
+  - is_noop
+  - enters_from_base
+  - enters_safe_zone_or_home
+- koje role figura akcija dira:
+  - self
+  - partner
+  - opponent_1
+  - opponent_2
+- dodatne binarne oznake dira li akcija self, partnera ili protivnika
+- ukupni broj koraka / 13
+- broj segmenata/pomaka / 7
+- broj figura / 8
+- prosjecni progress delta
+- team progress delta
+- enemy progress delta
+- team - enemy delta
+- posebne flagove:
+  - from base
+  - to safe
+  - joker
+  - seven
+  - split seven
+  - zavrsava figuru
+  - pomaze partneru
+  - steti protivniku ili radi capture
+
+Ranking model
+-------------
+
+Model `ranking_model_v2.pt` koristi ulaznu dimenziju:
+
+action_dim = 270
+state_dim = 0
+hidden_dim = 128
+
+Broj parametara modela je 51,329.
+
+Arhitektura mreze je MLP:
+
+Linear(270 -> 128)
+ReLU
+Linear(128 -> 128)
+ReLU
+Linear(128 -> 1)
+
+Dakle, mreza ima 3 linearna sloja i 2 ReLU aktivacijske funkcije. Izlaz je jedan skalarni score za jednu kandidatsku akciju.
+
+Ne koristi se dropout.
+Ne koristi se batch normalization.
+
+Broj parametara:
+
+270 * 128 + 128 = 34,688
+128 * 128 + 128 = 16,512
+128 * 1 + 1 = 129
+ukupno = 51,329
+
+Varijabilan broj akcija
+-----------------------
+
+Brandi Dog nema fiksan skup akcija. Broj legalnih akcija ovisi o stanju ploce, kartama u ruci i posebnim pravilima kao sto su sedmica, joker i jack. Zato se problem ne modelira kao klasifikacija nad fiksnim brojem klasa.
+
+Umjesto toga koristi se ranking pristup:
+
+state + kandidat akcija -> score
+
+Za jedno stanje postoji K kandidatskih akcija. Svaka od tih K akcija se zasebno enkodira u vektor od 270 dimenzija.
+
+Tehnicki se za jedan decision point dobije tensor:
+
+candidate_features: [K, 270]
+
+K je promjenjiv od stanja do stanja, ali zadnja dimenzija je uvijek fiksna i iznosi 270. PyTorch linearni slojevi zahtijevaju fiksnu feature dimenziju, ali ne zahtijevaju fiksan broj redaka. Zato se mreza moze primijeniti na tensor [K, 270] i vratiti:
+
+scores: [K]
+
+Tijekom supervised treninga, preko tih K scoreova radi se softmax/CrossEntropy. Target nije globalna klasa akcije, nego indeks ekspertove akcije unutar trenutne liste kandidata.
+
+Primjer:
+
+Ako stanje ima 12 kandidatskih akcija, model dobije tensor [12, 270] i vrati 12 scoreova. Ako drugo stanje ima 5 kandidatskih akcija, model dobije tensor [5, 270] i vrati 5 scoreova. U oba slucaja feature dimenzija je ista, ali broj kandidata smije biti razlicit.
+
+Policy gradient / REINFORCE
+---------------------------
+
+RL fine-tuning koristi policy-gradient pristup slican REINFORCE algoritmu.
+
+Model za svako stanje izracuna scoreove za kandidatske akcije:
+
+scores -> softmax -> distribucija akcija
+
+Tijekom treninga se iz te distribucije odabire akcija, a sprema se log-probability odabrane akcije. Nakon partije racunaju se returni unazad.
+
+Return se racuna s diskontiranjem:
+
+G_t = r_t + gamma * G_(t+1)
+
+Default vrijednost je:
+
+gamma = 0.99
+
+U self-play varijanti koja je zadnje podesena reward je terminal-only:
+
++100 za pobjedu treniranog tima
+-100 za poraz ili capped/no-winner partiju
+
+Ako su svi medukoraci reward 0, ranije akcije dobivaju diskontirani terminalni signal:
+
+G_t = gamma^(T-t) * terminal_reward
+
+Ne koristi se nauceni baseline ili value network za redukciju varijance. Postoji opcionalna normalizacija returna (`normalize_returns=True`), gdje se returni standardiziraju po epizodi ako ih ima vise, ali to nije learned baseline.
+
+Learning rate za RL fine-tuning defaultno je:
+
+1e-5
+
+Batch size je efektivno jedna partija, odnosno jedna epizoda. Log-probovi i rewardi se skupljaju kroz partiju, a update parametara se radi na kraju partije. Trenutna implementacija ne radi mini-batch update preko vise partija.
+
+U supervised treningu ranking modela takoder se obraduje jedan decision point odjednom: kandidatne akcije za taj decision point cine lokalni softmax skup.

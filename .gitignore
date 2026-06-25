@@ -1,15 +1,67 @@
-# Project data artifacts
-/data/
+# OS/editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
 
-# Python caches
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Python caches/build output
 __pycache__/
 *.py[cod]
+*$py.class
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
 
-# Virtual environments
+# Python virtual environments
 .venv/
 venv/
+env/
+ENV/
+backend/.venv/
 
-# Editor/system files
-.idea/
-.DS_Store
+# Node/Vite
+node_modules/
+frontend/node_modules/
+frontend/dist/
+.vite/
+*.tsbuildinfo
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Frontend source asset archives
+frontend/public/cards/archive/
+
+# Local generated data and experiment artifacts
+/data/
+/runs/
+/stats
+brandi_dog/simulations/data/
+
+# ML/model artifacts
+*.pt
+*.pth
+*.ckpt
+*.onnx
+!brandi_dog/agents/reinforcement_learning/checkpoints/.gitkeep
+
+# Temporary files
+*.tmp
+*.temp
+*.bak

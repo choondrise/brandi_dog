@@ -69,14 +69,14 @@ async def set_bot(game_id: str, request: BotRequest):
 
 @app.post("/api/sessions/{game_id}/start")
 async def start_game(game_id: str, request: StartRequest):
-    session = await manager.start(game_id, request.token)
-    return manager.game_payload(session, request.token)
+    session, events = await manager.start(game_id, request.token)
+    return manager.game_payload(session, request.token, events)
 
 
 @app.post("/api/sessions/{game_id}/action")
 async def apply_action(game_id: str, request: ActionRequest):
-    session = await manager.apply_action(game_id, request.token, request.action_id)
-    return manager.game_payload(session, request.token)
+    session, events = await manager.apply_action(game_id, request.token, request.action_id, request.action_key)
+    return manager.game_payload(session, request.token, events)
 
 
 @app.websocket("/ws/{game_id}")

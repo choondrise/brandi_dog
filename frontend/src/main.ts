@@ -1,7 +1,7 @@
 import "./styles.css";
 import { API_BASE, WS_BASE, createSession, getState, joinSession, playAction, setBot, setSeat, startGame } from "./api";
 import { renderBoard } from "./board";
-import type { ActionInfo, AppPayload, BotLevel, CardInfo, GamePayload, Seat } from "./types";
+import type { ActionInfo, AppPayload, BotLevel, CardInfo, GamePayload, PawnInfo, Seat, TurnEvent } from "./types";
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
 const seats: Seat[] = ["A1", "B1", "A2", "B2"];
@@ -12,6 +12,12 @@ let token = localStorage.getItem("brandi.token") || "";
 let hostToken = localStorage.getItem("brandi.hostToken") || "";
 let state: AppPayload | null = null;
 let socket: WebSocket | null = null;
+let actionInFlight = false;
+let replayInProgress = false;
+let refreshVersion = 0;
+let replayPawns: PawnInfo[] | null = null;
+let replayBaseGame: GamePayload | null = null;
+let currentReplayEvent: TurnEvent | null = null;
 
 function saveIdentity(nextGameId: string, nextToken: string, nextHostToken = "") {
   gameId = nextGameId.toUpperCase();
@@ -32,39 +38,56 @@ function clearIdentity() {
   localStorage.removeItem("brandi.hostToken");
   socket?.close();
   socket = null;
+  replayInProgress = false;
+  replayPawns = null;
+  replayBaseGame = null;
+  currentReplayEvent = null;
   render();
 }
 
 async function refresh() {
+  const version = ++refreshVersion;
   if (!gameId) {
     render();
     return;
   }
+  if (replayInProgress || actionInFlight) return;
   try {
-    state = await getState(gameId, token);
+    const nextState = await getState(gameId, token);
+    if (version !== refreshVersion) return;
+    state = nextState;
     connectSocket();
   } catch (error) {
-    toast(error);
+    if (version === refreshVersion) toast(error);
   }
-  render();
+  if (version === refreshVersion) render();
 }
 
 function connectSocket() {
-  if (!gameId || socket?.readyState === WebSocket.OPEN || socket?.readyState === WebSocket.CONNECTING) return;
+  if (!gameId || document.hidden || socket?.readyState === WebSocket.OPEN || socket?.readyState === WebSocket.CONNECTING) return;
   const query = token ? `?token=${encodeURIComponent(token)}` : "";
-  socket = new WebSocket(`${WS_BASE}/ws/${gameId}${query}`);
-  socket.onmessage = async (event) => {
+  const nextSocket = new WebSocket(`${WS_BASE}/ws/${gameId}${query}`);
+  socket = nextSocket;
+  nextSocket.onmessage = async (event) => {
+    if (socket !== nextSocket) return;
     const payload = JSON.parse(event.data);
     if (payload.type === "refresh") {
-      state = await getState(gameId, token);
-    } else if (payload.session) {
-      state = payload;
+      await refresh();
+      return;
     }
-    render();
+    if (payload.session && !replayInProgress && !actionInFlight) {
+      state = payload;
+      render();
+    }
   };
-  socket.onclose = () => {
-    socket = null;
+  nextSocket.onclose = () => {
+    if (socket === nextSocket) socket = null;
   };
+}
+
+function disconnectSocket() {
+  socket?.close();
+  socket = null;
 }
 
 function render() {
@@ -145,8 +168,7 @@ function renderLobby() {
   });
   document.querySelector("#start")!.addEventListener("click", async () => {
     try {
-      state = await startGame(gameId, hostToken || token);
-      render();
+      await acceptPayload(await startGame(gameId, hostToken || token), true);
     } catch (error) {
       toast(error);
     }
@@ -194,8 +216,64 @@ function renderSeatCard(seat: Seat) {
 }
 
 
+async function acceptPayload(payload: AppPayload, replay = false) {
+  const previousGame = state?.game || null;
+  state = payload;
+  const events = payload.events || [];
+  if (!replay || !events.length || !payload.game) {
+    render();
+    return;
+  }
+  replayBaseGame = previousGame;
+  await replayEvents(events);
+}
+
+async function replayEvents(events: TurnEvent[]) {
+  replayInProgress = true;
+  replayPawns = events[0].pawnsBefore;
+  currentReplayEvent = null;
+  render();
+  await delay(260);
+  for (const event of events) {
+    currentReplayEvent = event;
+    replayPawns = event.pawnsBefore;
+    render();
+    await delay(event.isBot ? 1520 : 360);
+    replayPawns = event.pawnsAfter;
+    render();
+    await delay(event.isBot ? (event.affectedPawns.length ? 1760 : 1460) : event.affectedPawns.length ? 760 : 460);
+  }
+  currentReplayEvent = null;
+  replayPawns = null;
+  replayBaseGame = null;
+  replayInProgress = false;
+  render();
+}
+
+function renderReplayBanner() {
+  if (!currentReplayEvent) return "";
+  const actor = escapeHtml(currentReplayEvent.actorName);
+  const label = escapeHtml(currentReplayEvent.label);
+  const card = currentReplayEvent.card ? `<img src="/cards/${currentReplayEvent.card.asset}" alt="${escapeHtml(currentReplayEvent.card.label)}" />` : "";
+  return `
+    <div class="replay-banner ${currentReplayEvent.isBot ? "bot" : "human"}">
+      ${card}
+      <div>
+        <span>${currentReplayEvent.isBot ? "Bot move" : "Your move"}</span>
+        <strong>${actor}</strong>
+        <p>${label}</p>
+      </div>
+    </div>
+  `;
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
 function renderGame() {
-  const game = state!.game!;
+  const game = replayInProgress && replayBaseGame ? replayBaseGame : state!.game!;
+  const displayedPawns = replayPawns || game.pawns;
   const hand = state!.viewerSeat ? game.hands[state!.viewerSeat].cards || [] : [];
   normalizeSelection(game, hand);
   const playableNoCardAction = noCardAction(game);
@@ -213,18 +291,21 @@ function renderGame() {
         </div>
         <span class="seat-pill">${state!.viewerSeat ? displaySeatName(state!.viewerSeat) : "Spectator"}</span>
       </header>
-      <section class="table-area">${renderBoard(game.pawns, game.activePlayer, boardSeatLabels(), selectedPawnIds, selectablePawnIds)}</section>
+      <section class="table-area">
+        ${renderReplayBanner()}
+        ${renderBoard(displayedPawns, game.activePlayer, boardSeatLabels(), selectedPawnIds, replayInProgress ? [] : selectablePawnIds, currentReplayEvent?.affectedPawns || [])}
+      </section>
       <section class="hand-tray">
         <div class="hand-header">
           <strong>Your hand</strong>
           <span>${hand.length || (state!.viewerSeat ? game.hands[state!.viewerSeat].count : 0)} cards</span>
         </div>
-        <div class="cards">${hand.map((card) => renderCard(card, cardPlayable(game, card.id), selectedCardId === card.id)).join("") || `<span class="muted">No visible cards</span>`}</div>
-        ${renderSelectionControls(game, actionOptions)}
+        <div class="cards">${hand.map((card) => renderCard(card, !replayInProgress && cardPlayable(game, card.id), selectedCardId === card.id)).join("") || `<span class="muted">No visible cards</span>`}</div>
+        ${replayInProgress ? `<div class="selection-panel"><p class="muted">Resolving moves before the next hand is dealt.</p></div>` : renderSelectionControls(game, actionOptions)}
       </section>
       <section class="play-bar">
         <button id="clear-selection" class="ghost" ${hasSelection() ? "" : "disabled"}>Clear</button>
-        <button id="confirm-play" ${canPlay ? "" : "disabled"}>${playButtonText(playableNoCardAction, finalAction)}</button>
+        <button id="confirm-play" ${canPlay && !actionInFlight && !replayInProgress ? "" : "disabled"}>${replayInProgress ? "Replaying..." : actionInFlight ? "Playing..." : playButtonText(playableNoCardAction, finalAction)}</button>
       </section>
     </main>
   `;
@@ -282,14 +363,22 @@ function renderGame() {
     });
   });
   document.querySelector("#confirm-play")!.addEventListener("click", async () => {
+    if (actionInFlight || replayInProgress) return;
     const action = playableNoCardAction || selectedPlayableAction(game);
     if (!action) return;
+    actionInFlight = true;
+    render();
     try {
-      state = await playAction(gameId, token, action.id);
+      const payload = await playAction(gameId, token, action.key);
       clearSelection();
-      render();
+      await acceptPayload(payload, true);
     } catch (error) {
       toast(error);
+      actionInFlight = false;
+      await refresh();
+    } finally {
+      actionInFlight = false;
+      if (!replayInProgress) render();
     }
   });
 }
@@ -487,5 +576,23 @@ function toast(error: unknown) {
   document.body.appendChild(node);
   setTimeout(() => node.remove(), 3200);
 }
+
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    clearSelection();
+    disconnectSocket();
+    render();
+    return;
+  }
+  void refresh();
+});
+
+window.addEventListener("focus", () => {
+  if (!document.hidden) void refresh();
+});
+
+window.addEventListener("pageshow", () => {
+  if (!document.hidden) void refresh();
+});
 
 refresh();

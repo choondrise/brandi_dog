@@ -64,6 +64,7 @@ export function renderBoard(
   seatLabels: Partial<Record<Seat, string>> = {},
   selectedPawnIds: string[] = [],
   selectablePawnIds: string[] = [],
+  replayPawnIds: string[] = [],
 ) {
   const track = Array.from({ length: 64 }, (_, index) => {
     const point = pointOnCircle(index, 37);
@@ -92,13 +93,15 @@ export function renderBoard(
 
   const selected = new Set(selectedPawnIds);
   const selectable = new Set(selectablePawnIds);
+  const replayed = new Set(replayPawnIds);
   const pawnHtml = pawns
     .map((pawn) => {
       const point = pawnPoint(pawn);
       const active = activePlayer === pawn.owner ? " active-owner" : "";
       const selectedClass = selected.has(pawn.id) ? " selected" : "";
       const selectableClass = selectable.has(pawn.id) ? " selectable" : "";
-      return `<button type="button" class="pawn${active}${selectedClass}${selectableClass}" data-pawn-id="${pawn.id}" style="left:${point.x}%;top:${point.y}%;--pawn-color:${pawn.color}">${pawn.number + 1}</button>`;
+      const replayClass = replayed.has(pawn.id) ? " replayed" : "";
+      return `<button type="button" class="pawn${active}${selectedClass}${selectableClass}${replayClass}" data-pawn-id="${pawn.id}" style="left:${point.x}%;top:${point.y}%;--pawn-color:${pawn.color}">${pawn.number + 1}</button>`;
     })
     .join("");
 

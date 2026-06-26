@@ -60,9 +60,9 @@ export function startGame(gameId: string, token: string) {
   });
 }
 
-export function playAction(gameId: string, token: string, actionId: number) {
+export function playAction(gameId: string, token: string, actionKey: string) {
   return request<AppPayload>(`/api/sessions/${gameId}/action`, {
     method: "POST",
-    body: JSON.stringify({ token, action_id: actionId }),
+    body: JSON.stringify({ token, action_key: actionKey }),
   });
 }

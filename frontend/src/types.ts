@@ -47,6 +47,7 @@ export interface ActionMoveInfo {
 
 export interface ActionInfo {
   id: number;
+  key: string;
   type: string;
   player: Seat;
   label: string;
@@ -57,6 +58,20 @@ export interface ActionInfo {
   steps: number | null;
   direction: "FORWARD" | "BACKWARD" | null;
   preferSafeEntry: boolean | null;
+}
+
+
+export interface TurnEvent {
+  id: string;
+  actor: Seat | null;
+  actorName: string;
+  isBot: boolean;
+  type: string;
+  label: string;
+  card: CardInfo | null;
+  affectedPawns: string[];
+  pawnsBefore: PawnInfo[];
+  pawnsAfter: PawnInfo[];
 }
 
 export interface GamePayload {
@@ -79,4 +94,5 @@ export interface AppPayload {
   game: GamePayload | null;
   viewerSeat: Seat | null;
   isHost: boolean;
+  events: TurnEvent[];
 }

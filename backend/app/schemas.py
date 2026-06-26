@@ -31,7 +31,8 @@ class StartRequest(BaseModel):
 
 class ActionRequest(BaseModel):
     token: str
-    action_id: int
+    action_id: Optional[int] = None
+    action_key: Optional[str] = None
 
 
 class ApiError(BaseModel):

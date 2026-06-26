@@ -67,7 +67,7 @@ def serialize_game(
         "activePlayer": None if active is None else active.name,
         "winner": None if state.winner is None else state.winner.value,
         "players": [_player_payload(player) for player in PlayerId],
-        "pawns": [_pawn_payload(state, pawn) for player in PlayerId for pawn in player_pawns(player)],
+        "pawns": serialize_pawns(state),
         "hands": _hands_payload(engine, state, viewer),
         "discardCount": len(state.discard_pile),
         "drawCount": len(state.draw_pile),
@@ -112,6 +112,10 @@ def _card_asset_name(card: Card) -> str:
     return f"{suit}{card.rank.value}.png"
 
 
+def serialize_pawns(state: GameState) -> list[dict[str, Any]]:
+    return [_pawn_payload(state, pawn) for player in PlayerId for pawn in player_pawns(player)]
+
+
 def _pawn_payload(state: GameState, pawn: PawnRef) -> dict[str, Any]:
     position = get_pawn_position(state, pawn)
     return {
@@ -130,6 +134,7 @@ def _position_payload(position: Position) -> dict[str, Any]:
 def serialize_action(action_id: int, action: Action, cards_by_id: dict[int, Card]) -> dict[str, Any]:
     payload = {
         "id": action_id,
+        "key": action_key(action),
         "type": type(action).__name__,
         "player": getattr(action, "player", None).name,
         "label": describe_action(action, cards_by_id),
@@ -168,6 +173,43 @@ def serialize_action(action_id: int, action: Action, cards_by_id: dict[int, Card
     return payload
 
 
+def action_key(action: Action) -> str:
+    parts = [type(action).__name__, _enum_name(getattr(action, "player", None))]
+    card_id = getattr(action, "card_id", None)
+    if card_id is not None:
+        parts.extend(["card", str(card_id)])
+    represented_rank = getattr(action, "represented_rank", None)
+    if represented_rank is not None:
+        parts.extend(["rank", _enum_name(represented_rank)])
+    if isinstance(action, PlayEnterAction):
+        parts.extend(["pawn", _pawn_key(action.pawn)])
+    elif isinstance(action, PlayStepCardAction):
+        parts.extend([
+            "pawn",
+            _pawn_key(action.pawn),
+            "steps",
+            str(action.steps),
+            "direction",
+            action.direction.value,
+            "safe",
+            "1" if action.prefer_safe_entry else "0",
+        ])
+    elif isinstance(action, PlayJackSwapAction):
+        parts.extend(["source", _pawn_key(action.source), "target", _pawn_key(action.target)])
+    elif isinstance(action, PlaySevenSplitAction):
+        for move in action.moves:
+            parts.extend(["move", _pawn_key(move.pawn), str(move.steps), "1" if move.prefer_safe_entry else "0"])
+    return "|".join(parts)
+
+
+def _pawn_key(pawn: PawnRef) -> str:
+    return f"{pawn.owner.name}.{pawn.number}"
+
+
+def _enum_name(value: Any) -> str:
+    return value.name if hasattr(value, "name") else str(value)
+
+
 def _pawn_ref_payload(pawn: PawnRef) -> dict[str, Any]:
     return {"id": f"{pawn.owner.name}-{pawn.number}", "owner": pawn.owner.name, "number": pawn.number}
 
@@ -176,21 +218,25 @@ def describe_action(action: Action, cards_by_id: dict[int, Card]) -> str:
     if isinstance(action, SwapCardAction):
         return f"Swap {render_card(cards_by_id[action.card_id].rank)} with teammate"
     if isinstance(action, PlayEnterAction):
-        return f"Play {_card_descriptor(action.card_id, action.represented_rank, cards_by_id)} to enter {action.pawn.owner.name}.{action.pawn.number}"
+        return f"Play {_card_descriptor(action.card_id, action.represented_rank, cards_by_id)} to enter {_pawn_descriptor(action.pawn)}"
     if isinstance(action, PlayStepCardAction):
         direction = "+" if action.direction == MoveDirection.FORWARD else "-"
         suffix = "" if action.prefer_safe_entry else " on track"
-        return f"Play {_card_descriptor(action.card_id, action.represented_rank, cards_by_id)} move {action.pawn.owner.name}.{action.pawn.number} {direction}{action.steps}{suffix}"
+        return f"Play {_card_descriptor(action.card_id, action.represented_rank, cards_by_id)} move {_pawn_descriptor(action.pawn)} {direction}{action.steps}{suffix}"
     if isinstance(action, PlayJackSwapAction):
-        return f"Play {_card_descriptor(action.card_id, action.represented_rank, cards_by_id)} swap {action.source.owner.name}.{action.source.number} with {action.target.owner.name}.{action.target.number}"
+        return f"Play {_card_descriptor(action.card_id, action.represented_rank, cards_by_id)} swap {_pawn_descriptor(action.source)} with {_pawn_descriptor(action.target)}"
     if isinstance(action, PlaySevenSplitAction):
-        moves = ", ".join(f"{move.pawn.owner.name}.{move.pawn.number}+{move.steps}" for move in action.moves)
+        moves = ", ".join(f"{_pawn_descriptor(move.pawn)}+{move.steps}" for move in action.moves)
         return f"Play {_card_descriptor(action.card_id, action.represented_rank, cards_by_id)} split [{moves}]"
     if isinstance(action, DiscardHandAction):
         return "Discard hand"
     if isinstance(action, SkipTurnAction):
         return "Skip turn"
     return repr(action)
+
+
+def _pawn_descriptor(pawn: PawnRef) -> str:
+    return f"{pawn.owner.name}.{pawn.number + 1}"
 
 
 def _card_descriptor(card_id: int, represented_rank: Rank, cards_by_id: dict[int, Card]) -> str:

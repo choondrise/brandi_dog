@@ -8,12 +8,13 @@ from typing import Any, Dict, Optional
 
 from fastapi import HTTPException, WebSocket
 
+from brandi_dog.engine.actions import SwapCardAction
 from brandi_dog.engine.engine import GameEngine
 from brandi_dog.engine.state import GameState, PlayerId, RoundStage
 
 from .bots import BOT_LEVELS, build_bot
 from .schemas import LobbyPlayer, PublicSession, SeatInfo
-from .serialization import active_player, serialize_game
+from .serialization import action_key, active_player, describe_action, serialize_action, serialize_game, serialize_pawns
 
 
 SEAT_ORDER = (PlayerId.A1, PlayerId.B1, PlayerId.A2, PlayerId.B2)
@@ -92,7 +93,7 @@ class SessionManager:
         await self._broadcast(session)
         return session
 
-    async def start(self, game_id: str, token: str) -> GameSession:
+    async def start(self, game_id: str, token: str) -> tuple[GameSession, list[dict[str, Any]]]:
         session = self._get(game_id)
         async with session.lock:
             self._ensure_host(session, token)
@@ -106,11 +107,12 @@ class SessionManager:
                 if not self._seat_occupied_by_human(session, seat):
                     session.bot_agents[seat] = build_bot(session.bot_levels[seat], seed=secrets.randbelow(1_000_000_000))
             session.phase = "PLAYING"
-            self._advance_bots_locked(session)
+            events: list[dict[str, Any]] = []
+            self._advance_bots_locked(session, events)
         await self._broadcast(session)
-        return session
+        return session, events
 
-    async def apply_action(self, game_id: str, token: str, action_id: int) -> GameSession:
+    async def apply_action(self, game_id: str, token: str, action_id: Optional[int], selected_action_key: Optional[str]) -> tuple[GameSession, list[dict[str, Any]]]:
         session = self._get(game_id)
         async with session.lock:
             self._ensure_playing(session)
@@ -121,12 +123,22 @@ class SessionManager:
             if player.seat != actor:
                 raise HTTPException(status_code=403, detail="It is not your turn")
             legal = session.engine.legal_actions(session.state)
-            if action_id < 0 or action_id >= len(legal):
-                raise HTTPException(status_code=400, detail="Invalid action id")
-            session.state = session.engine.step(session.state, legal[action_id])
-            self._advance_bots_locked(session)
+            action = self._select_legal_action(legal, action_id, selected_action_key)
+            events: list[dict[str, Any]] = []
+            self._apply_action_locked(session, action, events)
+            self._advance_bots_locked(session, events)
         await self._broadcast(session)
-        return session
+        return session, events
+
+    def _select_legal_action(self, legal, action_id: Optional[int], selected_action_key: Optional[str]):
+        if selected_action_key:
+            for candidate in legal:
+                if action_key(candidate) == selected_action_key:
+                    return candidate
+            raise HTTPException(status_code=409, detail="Selected move is no longer legal. Refresh and choose again.")
+        if action_id is None or action_id < 0 or action_id >= len(legal):
+            raise HTTPException(status_code=400, detail="Invalid action")
+        return legal[action_id]
 
     def public_session(self, session: GameSession) -> PublicSession:
         return PublicSession(
@@ -146,7 +158,7 @@ class SessionManager:
             host_token_hint=self._hint(session.host_token),
         )
 
-    def game_payload(self, session: GameSession, token: Optional[str]) -> dict[str, Any]:
+    def game_payload(self, session: GameSession, token: Optional[str], events: Optional[list[dict[str, Any]]] = None) -> dict[str, Any]:
         viewer = None
         if token and token in session.players:
             viewer = session.players[token].seat
@@ -158,6 +170,7 @@ class SessionManager:
             "game": serialize_game(session.engine, session.state, legal, viewer) if session.engine is not None else None,
             "viewerSeat": None if viewer is None else viewer.name,
             "isHost": token == session.host_token or (token in session.players and session.players[token].is_host),
+            "events": events or [],
         }
 
     async def connect_ws(self, game_id: str, websocket: WebSocket) -> GameSession:
@@ -172,7 +185,7 @@ class SessionManager:
     async def send_ws_state(self, session: GameSession, websocket: WebSocket, token: Optional[str]) -> None:
         await websocket.send_json(self.game_payload(session, token))
 
-    def _advance_bots_locked(self, session: GameSession) -> None:
+    def _advance_bots_locked(self, session: GameSession, events: Optional[list[dict[str, Any]]] = None) -> None:
         assert session.engine is not None
         assert session.state is not None
         guard = 0
@@ -181,10 +194,53 @@ class SessionManager:
             if actor is None or actor not in session.bot_agents:
                 break
             action = session.bot_agents[actor].select_action(session.engine, session.state)
-            session.state = session.engine.step(session.state, action)
+            self._apply_action_locked(session, action, events)
             guard += 1
         if session.state.round_stage == RoundStage.GAME_OVER:
             session.phase = "FINISHED"
+
+    def _apply_action_locked(self, session: GameSession, action, events: Optional[list[dict[str, Any]]] = None) -> None:
+        assert session.engine is not None
+        assert session.state is not None
+        before_state = session.state
+        before_pawns = serialize_pawns(before_state)
+        session.state = session.engine.step(session.state, action)
+        if events is not None and not isinstance(action, SwapCardAction):
+            after_pawns = serialize_pawns(session.state)
+            events.append(self._turn_event(session, action, before_pawns, after_pawns))
+
+    def _turn_event(self, session: GameSession, action, before_pawns: list[dict[str, Any]], after_pawns: list[dict[str, Any]]) -> dict[str, Any]:
+        assert session.engine is not None
+        actor = getattr(action, "player", None)
+        actor_name = self._display_name(session, actor) if actor is not None else "Game"
+        before_by_id = {pawn["id"]: pawn for pawn in before_pawns}
+        affected = [
+            pawn["id"]
+            for pawn in after_pawns
+            if before_by_id.get(pawn["id"], {}).get("position") != pawn["position"]
+        ]
+        card_id = getattr(action, "card_id", None)
+        card = None
+        if card_id is not None:
+            card = serialize_action(0, action, session.engine.cards_by_id).get("card")
+        return {
+            "id": secrets.token_hex(6),
+            "actor": None if actor is None else actor.name,
+            "actorName": actor_name,
+            "isBot": actor in session.bot_agents if actor is not None else False,
+            "type": type(action).__name__,
+            "label": describe_action(action, session.engine.cards_by_id),
+            "card": card,
+            "affectedPawns": affected,
+            "pawnsBefore": before_pawns,
+            "pawnsAfter": after_pawns,
+        }
+
+    def _display_name(self, session: GameSession, seat: PlayerId) -> str:
+        human = next((player for player in session.players.values() if player.seat == seat), None)
+        if human is not None:
+            return human.name
+        return seat.name
 
     async def _broadcast(self, session: GameSession) -> None:
         disconnected: list[WebSocket] = []

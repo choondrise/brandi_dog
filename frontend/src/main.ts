@@ -5,7 +5,7 @@ import type { ActionInfo, AppPayload, BotLevel, CardInfo, GamePayload, Seat } fr
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
 const seats: Seat[] = ["A1", "B1", "A2", "B2"];
-const botLevels: BotLevel[] = ["Idiot", "Easy", "Medium", "Hard", "Cheater"];
+const botLevels: BotLevel[] = ["Idiot", "Easy", "Hard", "Cheater"];
 
 let gameId = localStorage.getItem("brandi.gameId") || "";
 let token = localStorage.getItem("brandi.token") || "";

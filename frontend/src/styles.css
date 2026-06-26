@@ -58,7 +58,8 @@ label {
 
 .home,
 .lobby,
-.game {
+.game,
+.rules-page {
   width: min(100%, 1040px);
   margin: 0 auto;
   min-height: 100vh;
@@ -96,6 +97,72 @@ label {
   max-width: 34rem;
 }
 
+
+.rules-page {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+}
+
+.rules-header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: -14px -14px 0;
+  padding: max(12px, env(safe-area-inset-top)) 14px 12px;
+  background: rgba(245, 239, 229, 0.96);
+  border-bottom: 1px solid #e0d1bc;
+  backdrop-filter: blur(12px);
+}
+
+.rules-header strong {
+  color: #143d2b;
+  font-size: 1rem;
+}
+
+.rules-content {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #e0d1bc;
+  border-radius: 8px;
+  background: rgba(255, 250, 242, 0.86);
+}
+
+.rules-content h1,
+.rules-content h2,
+.rules-content p,
+.rules-content ul {
+  margin: 0;
+}
+
+.rules-content h1 {
+  color: #143d2b;
+  font-size: 1.45rem;
+  line-height: 1.1;
+}
+
+.rules-content h2 {
+  margin-top: 8px;
+  color: #143d2b;
+  font-size: 1rem;
+}
+
+.rules-content p,
+.rules-content li {
+  color: #26352b;
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.rules-content ul {
+  display: grid;
+  gap: 6px;
+  padding-left: 20px;
+}
 
 .entry-panel,
 .lobby-actions,

@@ -1,4 +1,5 @@
 import "./styles.css";
+import rulesMarkdown from "./rules.md?raw";
 import { API_BASE, WS_BASE, createSession, getState, joinSession, playAction, setBot, setSeat, startGame } from "./api";
 import { renderBoard } from "./board";
 import type { ActionInfo, AppPayload, BotLevel, CardInfo, GamePayload, PawnInfo, Seat, TurnEvent } from "./types";
@@ -19,6 +20,7 @@ let replayPawns: PawnInfo[] | null = null;
 let replayBaseGame: GamePayload | null = null;
 let currentReplayEvent: TurnEvent | null = null;
 let seenEventIds = new Set<string>();
+let currentView: "home" | "rules" = "home";
 
 function saveIdentity(nextGameId: string, nextToken: string, nextHostToken = "") {
   gameId = nextGameId.toUpperCase();
@@ -98,6 +100,10 @@ function disconnectSocket() {
 }
 
 function render() {
+  if (currentView === "rules") {
+    renderRules();
+    return;
+  }
   if (!gameId || !state) {
     renderHome();
     return;
@@ -123,9 +129,14 @@ function renderHome() {
           <input id="game-id" maxlength="6" placeholder="GAME ID" />
           <button id="join">Join</button>
         </div>
+        <button id="how-to-play" class="ghost">How to play</button>
       </section>
     </main>
   `;
+  document.querySelector<HTMLButtonElement>("#how-to-play")!.onclick = () => {
+    currentView = "rules";
+    render();
+  };
   document.querySelector<HTMLButtonElement>("#create")!.onclick = async () => {
     try {
       const name = inputValue("#name", "Host");
@@ -147,6 +158,74 @@ function renderHome() {
       toast(error);
     }
   };
+}
+
+function renderRules() {
+  app.innerHTML = `
+    <main class="rules-page">
+      <header class="rules-header">
+        <button id="rules-back" class="ghost">Go back</button>
+        <div>
+          <span class="eyebrow">Rules</span>
+          <strong>How to play Brandi Dog</strong>
+        </div>
+      </header>
+      <section class="rules-content">
+        ${renderRulesMarkdown(rulesMarkdown)}
+      </section>
+    </main>
+  `;
+  document.querySelector<HTMLButtonElement>("#rules-back")!.onclick = () => {
+    currentView = "home";
+    render();
+  };
+}
+
+function renderRulesMarkdown(markdown: string) {
+  const lines = markdown.split(/\r?\n/);
+  const html: string[] = [];
+  let listOpen = false;
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) {
+      if (listOpen) {
+        html.push("</ul>");
+        listOpen = false;
+      }
+      continue;
+    }
+    if (line.startsWith("# ")) {
+      if (listOpen) {
+        html.push("</ul>");
+        listOpen = false;
+      }
+      html.push(`<h1>${escapeHtml(line.slice(2))}</h1>`);
+      continue;
+    }
+    if (line.startsWith("## ")) {
+      if (listOpen) {
+        html.push("</ul>");
+        listOpen = false;
+      }
+      html.push(`<h2>${escapeHtml(line.slice(3))}</h2>`);
+      continue;
+    }
+    if (line.startsWith("- ")) {
+      if (!listOpen) {
+        html.push("<ul>");
+        listOpen = true;
+      }
+      html.push(`<li>${escapeHtml(line.slice(2))}</li>`);
+      continue;
+    }
+    if (listOpen) {
+      html.push("</ul>");
+      listOpen = false;
+    }
+    html.push(`<p>${escapeHtml(line)}</p>`);
+  }
+  if (listOpen) html.push("</ul>");
+  return html.join("");
 }
 
 function renderLobby() {

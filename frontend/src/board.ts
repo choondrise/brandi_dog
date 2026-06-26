@@ -8,12 +8,66 @@ const seatColors: Record<Seat, string> = {
   B2: "#d4ae1f",
 };
 
-function pointOnCircle(index: number, radius: number) {
-  const angle = (-90 + (index * 360) / 64) * (Math.PI / 180);
+function polarPoint(angleDeg: number, radius: number) {
+  const angle = angleDeg * (Math.PI / 180);
   return {
     x: 50 + radius * Math.cos(angle),
     y: 50 + radius * Math.sin(angle),
   };
+}
+
+function pointOnCircle(index: number, radius: number) {
+  return polarPoint(-90 + (index * 360) / 64, radius);
+}
+
+function rotateAroundCenter(point: { x: number; y: number }, quarterTurns: number) {
+  let x = point.x - 50;
+  let y = point.y - 50;
+  for (let turn = 0; turn < quarterTurns; turn += 1) {
+    const nextX = -y;
+    y = x;
+    x = nextX;
+  }
+  return { x: 50 + x, y: 50 + y };
+}
+
+function interpolate(start: number, end: number, t: number) {
+  return start + (end - start) * t;
+}
+
+function buildQuadrantTemplate() {
+  const fields: { x: number; y: number }[] = [];
+  const outerStep = 6.5;
+  const outerInset = outerStep * 4;
+  for (const angle of [0, outerStep, outerStep * 2, outerStep * 3, outerInset]) {
+    fields.push(polarPoint(-90 + angle, 37));
+  }
+
+  const field4 = fields[4];
+  const field12 = polarPoint(-90 + (90 - outerInset), 37);
+  const field8 = { x: field4.x, y: field12.y };
+
+  for (const t of [0.25, 0.5, 0.75]) {
+    fields.push({ x: field4.x, y: interpolate(field4.y, field8.y, t) });
+  }
+  fields.push(field8);
+  for (const t of [0.25, 0.5, 0.75]) {
+    fields.push({ x: interpolate(field8.x, field12.x, t), y: field12.y });
+  }
+
+  for (const angle of [90 - outerInset, 90 - outerStep * 3, 90 - outerStep * 2, 90 - outerStep]) {
+    fields.push(polarPoint(-90 + angle, 37));
+  }
+  return fields;
+}
+
+const quadrantTemplate = buildQuadrantTemplate();
+const MAIN_PATH_POSITIONS = Array.from({ length: 64 }, (_, index) =>
+  rotateAroundCenter(quadrantTemplate[index % 16], Math.floor(index / 16)),
+);
+
+function mainPathPoint(index: number) {
+  return MAIN_PATH_POSITIONS[((index % MAIN_PATH_POSITIONS.length) + MAIN_PATH_POSITIONS.length) % MAIN_PATH_POSITIONS.length];
 }
 
 function seatAngle(seat: Seat) {
@@ -44,7 +98,7 @@ function basePoint(seat: Seat, index: number) {
 
 function pawnPoint(pawn: PawnInfo) {
   if (pawn.position.kind === "TRACK" && pawn.position.index !== null) {
-    return pointOnCircle(pawn.position.index, 37);
+    return mainPathPoint(pawn.position.index);
   }
   if (pawn.position.kind === "SAFE" && pawn.position.index !== null) {
     return safePoint(pawn.owner, pawn.position.index);
@@ -67,7 +121,7 @@ export function renderBoard(
   replayPawnIds: string[] = [],
 ) {
   const track = Array.from({ length: 64 }, (_, index) => {
-    const point = pointOnCircle(index, 37);
+    const point = mainPathPoint(index);
     const owner = (Object.keys(entryIndex) as Seat[]).find((seat) => entryIndex[seat] === index);
     const style = `left:${point.x}%;top:${point.y}%;${owner ? `--seat-color:${seatColors[owner]}` : ""}`;
     return `<span class="hole ${owner ? "entry" : ""}" style="${style}"></span>`;

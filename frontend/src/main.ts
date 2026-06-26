@@ -18,6 +18,7 @@ let refreshVersion = 0;
 let replayPawns: PawnInfo[] | null = null;
 let replayBaseGame: GamePayload | null = null;
 let currentReplayEvent: TurnEvent | null = null;
+let seenEventIds = new Set<string>();
 
 function saveIdentity(nextGameId: string, nextToken: string, nextHostToken = "") {
   gameId = nextGameId.toUpperCase();
@@ -26,6 +27,12 @@ function saveIdentity(nextGameId: string, nextToken: string, nextHostToken = "")
   localStorage.setItem("brandi.gameId", gameId);
   localStorage.setItem("brandi.token", token);
   if (hostToken) localStorage.setItem("brandi.hostToken", hostToken);
+}
+
+function confirmExitGame() {
+  if (window.confirm("Exit this game? You can rejoin later with the same game ID if the table is still running.")) {
+    clearIdentity();
+  }
 }
 
 function clearIdentity() {
@@ -42,6 +49,7 @@ function clearIdentity() {
   replayPawns = null;
   replayBaseGame = null;
   currentReplayEvent = null;
+  seenEventIds = new Set<string>();
   render();
 }
 
@@ -76,8 +84,7 @@ function connectSocket() {
       return;
     }
     if (payload.session && !replayInProgress && !actionInFlight) {
-      state = payload;
-      render();
+      await acceptPayload(payload, Boolean(payload.events?.length));
     }
   };
   nextSocket.onclose = () => {
@@ -218,8 +225,9 @@ function renderSeatCard(seat: Seat) {
 
 async function acceptPayload(payload: AppPayload, replay = false) {
   const previousGame = state?.game || null;
+  const events = (payload.events || []).filter((event) => !seenEventIds.has(event.id));
+  for (const event of events) seenEventIds.add(event.id);
   state = payload;
-  const events = payload.events || [];
   if (!replay || !events.length || !payload.game) {
     render();
     return;
@@ -284,12 +292,12 @@ function renderGame() {
   app.innerHTML = `
     <main class="game">
       <header class="game-status">
-        <button class="ghost" id="back-lobby">${state!.session.game_id}</button>
+        <button class="ghost player-button" id="back-lobby">${state!.viewerSeat ? displaySeatName(state!.viewerSeat) : "Spectator"}</button>
         <div>
           <span class="eyebrow">${game.phase.replace("_", " ")}</span>
           <strong>${game.winner ? `Team ${game.winner} wins` : game.activePlayer ? `${displaySeatName(game.activePlayer)} to move` : "Game over"}</strong>
         </div>
-        <span class="seat-pill">${state!.viewerSeat ? displaySeatName(state!.viewerSeat) : "Spectator"}</span>
+        <button class="ghost exit-button" id="exit-game">Exit</button>
       </header>
       <section class="table-area">
         ${renderReplayBanner()}
@@ -310,6 +318,7 @@ function renderGame() {
     </main>
   `;
   document.querySelector("#back-lobby")!.addEventListener("click", refresh);
+  document.querySelector("#exit-game")!.addEventListener("click", confirmExitGame);
   document.querySelector("#clear-selection")!.addEventListener("click", () => {
     clearSelection();
     render();

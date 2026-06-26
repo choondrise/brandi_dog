@@ -39,7 +39,7 @@ class GameSession:
     bot_levels: Dict[PlayerId, str] = field(default_factory=lambda: {seat: "Easy" for seat in SEAT_ORDER})
     bot_agents: Dict[PlayerId, Any] = field(default_factory=dict)
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
-    websockets: set[WebSocket] = field(default_factory=set)
+    websockets: dict[WebSocket, Optional[str]] = field(default_factory=dict)
 
 
 class SessionManager:
@@ -109,7 +109,7 @@ class SessionManager:
             session.phase = "PLAYING"
             events: list[dict[str, Any]] = []
             self._advance_bots_locked(session, events)
-        await self._broadcast(session)
+        await self._broadcast(session, events)
         return session, events
 
     async def apply_action(self, game_id: str, token: str, action_id: Optional[int], selected_action_key: Optional[str]) -> tuple[GameSession, list[dict[str, Any]]]:
@@ -127,7 +127,7 @@ class SessionManager:
             events: list[dict[str, Any]] = []
             self._apply_action_locked(session, action, events)
             self._advance_bots_locked(session, events)
-        await self._broadcast(session)
+        await self._broadcast(session, events)
         return session, events
 
     def _select_legal_action(self, legal, action_id: Optional[int], selected_action_key: Optional[str]):
@@ -173,14 +173,14 @@ class SessionManager:
             "events": events or [],
         }
 
-    async def connect_ws(self, game_id: str, websocket: WebSocket) -> GameSession:
+    async def connect_ws(self, game_id: str, websocket: WebSocket, token: Optional[str]) -> GameSession:
         session = self._get(game_id)
         await websocket.accept()
-        session.websockets.add(websocket)
+        session.websockets[websocket] = token
         return session
 
     async def disconnect_ws(self, session: GameSession, websocket: WebSocket) -> None:
-        session.websockets.discard(websocket)
+        session.websockets.pop(websocket, None)
 
     async def send_ws_state(self, session: GameSession, websocket: WebSocket, token: Optional[str]) -> None:
         await websocket.send_json(self.game_payload(session, token))
@@ -242,15 +242,18 @@ class SessionManager:
             return human.name
         return seat.name
 
-    async def _broadcast(self, session: GameSession) -> None:
+    async def _broadcast(self, session: GameSession, events: Optional[list[dict[str, Any]]] = None) -> None:
         disconnected: list[WebSocket] = []
-        for websocket in list(session.websockets):
+        for websocket, token in list(session.websockets.items()):
             try:
-                await websocket.send_json({"type": "refresh"})
+                if events:
+                    await websocket.send_json(self.game_payload(session, token, events))
+                else:
+                    await websocket.send_json({"type": "refresh"})
             except Exception:
                 disconnected.append(websocket)
         for websocket in disconnected:
-            session.websockets.discard(websocket)
+            session.websockets.pop(websocket, None)
 
     def _get(self, game_id: str) -> GameSession:
         session = self.sessions.get(game_id.upper())

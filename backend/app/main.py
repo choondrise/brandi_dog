@@ -81,7 +81,7 @@ async def apply_action(game_id: str, request: ActionRequest):
 
 @app.websocket("/ws/{game_id}")
 async def websocket_updates(websocket: WebSocket, game_id: str, token: Optional[str] = None):
-    session = await manager.connect_ws(game_id, websocket)
+    session = await manager.connect_ws(game_id, websocket, token)
     try:
         await manager.send_ws_state(session, websocket, token)
         while True:

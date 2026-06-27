@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 
 from pydantic import BaseModel, Field
 
@@ -29,10 +29,19 @@ class StartRequest(BaseModel):
     token: str
 
 
+class SevenSplitMoveRequest(BaseModel):
+    pawn_id: str
+    steps: int
+    prefer_safe_entry: bool = True
+
+
 class ActionRequest(BaseModel):
     token: str
     action_id: Optional[int] = None
     action_key: Optional[str] = None
+    card_id: Optional[int] = None
+    represented_rank: Optional[str] = None
+    seven_moves: Optional[List[SevenSplitMoveRequest]] = None
 
 
 class ApiError(BaseModel):

@@ -1,8 +1,11 @@
 import "./styles.css";
 import rulesMarkdown from "./rules.md?raw";
-import { API_BASE, WS_BASE, createSession, getState, joinSession, playAction, setBot, setSeat, startGame } from "./api";
+import { inject } from "@vercel/analytics";
+import { API_BASE, WS_BASE, createSession, getState, joinSession, playAction, playSevenSplit, setBot, setSeat, startGame } from "./api";
 import { renderBoard } from "./board";
 import type { ActionInfo, AppPayload, BotLevel, CardInfo, GamePayload, PawnInfo, Seat, TurnEvent } from "./types";
+
+inject({ framework: "vite" });
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
 const seats: Seat[] = ["A1", "B1", "A2", "B2"];
@@ -21,6 +24,12 @@ let replayBaseGame: GamePayload | null = null;
 let currentReplayEvent: TurnEvent | null = null;
 let seenEventIds = new Set<string>();
 let currentView: "home" | "rules" = "home";
+type FocusOverlay =
+  | { kind: "swap"; card: CardInfo; title: string; text: string }
+  | { kind: "deal"; count: number; title: string; text: string; rolling: boolean };
+let activeOverlay: FocusOverlay | null = null;
+let replayHandCards: CardInfo[] | null = null;
+let optimisticHandCards: CardInfo[] | null = null;
 
 function saveIdentity(nextGameId: string, nextToken: string, nextHostToken = "") {
   gameId = nextGameId.toUpperCase();
@@ -51,6 +60,8 @@ function clearIdentity() {
   replayPawns = null;
   replayBaseGame = null;
   currentReplayEvent = null;
+  replayHandCards = null;
+  optimisticHandCards = null;
   seenEventIds = new Set<string>();
   render();
 }
@@ -65,12 +76,19 @@ async function refresh() {
   try {
     const nextState = await getState(gameId, token);
     if (version !== refreshVersion) return;
-    state = nextState;
+    await acceptPayload(nextState, false);
     connectSocket();
   } catch (error) {
-    if (version === refreshVersion) toast(error);
+    if (version === refreshVersion) {
+      if (error instanceof Error && error.message === "Unknown game id") {
+        clearIdentity();
+        toast("That saved game is no longer available.");
+        return;
+      }
+      toast(error);
+      render();
+    }
   }
-  if (version === refreshVersion) render();
 }
 
 function connectSocket() {
@@ -144,6 +162,7 @@ function renderHome() {
       saveIdentity(created.game_id, created.player_token, created.host_token);
       await refresh();
     } catch (error) {
+      optimisticHandCards = null;
       toast(error);
     }
   };
@@ -304,18 +323,92 @@ function renderSeatCard(seat: Seat) {
 
 async function acceptPayload(payload: AppPayload, replay = false) {
   const previousGame = state?.game || null;
+  const overlays = payload.game ? focusOverlaysForPayload(previousGame, payload) : [];
   const events = (payload.events || []).filter((event) => !seenEventIds.has(event.id));
   for (const event of events) seenEventIds.add(event.id);
+  replayHandCards = replay && events.length && payload.game ? replayHandForPayload(previousGame, payload, events) : null;
+  if (!replay) optimisticHandCards = null;
   state = payload;
   if (!replay || !events.length || !payload.game) {
+    if (overlays.length) await playFocusOverlays(overlays);
+    replayHandCards = null;
+    optimisticHandCards = null;
     render();
     return;
   }
   replayBaseGame = previousGame;
-  await replayEvents(events);
+  await replayEvents(events, overlays);
 }
 
-async function replayEvents(events: TurnEvent[]) {
+function focusOverlaysForPayload(previousGame: GamePayload | null, payload: AppPayload) {
+  const viewer = payload.viewerSeat;
+  const nextGame = payload.game;
+  if (!viewer || !nextGame) return [];
+  const previousHand = previousGame?.hands[viewer].cards || [];
+  const nextHand = nextGame.hands[viewer].cards || [];
+  const overlays: FocusOverlay[] = [];
+  const added = nextHand.filter((card) => !previousHand.some((oldCard) => oldCard.id === card.id));
+  const removed = previousHand.filter((card) => !nextHand.some((newCard) => newCard.id === card.id));
+  const swappedCardReceived = previousGame?.phase === "TEAM_SWAPS" && added.length === 1 && removed.length === 1;
+  if (swappedCardReceived) {
+    overlays.push({
+      kind: "swap",
+      card: added[0],
+      title: "Card received",
+      text: `You received ${added[0].label} from your teammate.`,
+    });
+  }
+
+  const isDiceDeal =
+    nextGame.phase === "TEAM_SWAPS" &&
+    nextGame.dealRoundIndex >= 5 &&
+    nextHand.length > 0 &&
+    (!previousGame || previousGame.phase !== "TEAM_SWAPS" || previousGame.dealRoundIndex !== nextGame.dealRoundIndex);
+  if (isDiceDeal) {
+    overlays.push({
+      kind: "deal",
+      count: nextGame.activeDealSize,
+      title: "New hand",
+      text: `${nextGame.activeDealSize} cards dealt. ${displaySeatName(nextGame.roundStarter)} plays first.`,
+      rolling: true,
+    });
+  }
+  return overlays;
+}
+
+function replayHandForPayload(previousGame: GamePayload | null, payload: AppPayload, events: TurnEvent[]) {
+  const viewer = payload.viewerSeat;
+  const nextGame = payload.game;
+  if (!viewer || !nextGame) return null;
+  if (previousGame?.phase === "PLAY_LOOP" && nextGame.phase === "TEAM_SWAPS") {
+    let cards = [...(previousGame.hands[viewer].cards || [])];
+    for (const event of events) {
+      if (event.actor === viewer && event.card) {
+        cards = cards.filter((card) => card.id !== event.card!.id);
+      }
+    }
+    return cards;
+  }
+  return nextGame.hands[viewer].cards || [];
+}
+
+async function playFocusOverlays(overlays: FocusOverlay[]) {
+  for (const overlay of overlays) {
+    activeOverlay = overlay;
+    render();
+    if (overlay.kind === "deal") {
+      await delay(2000);
+      activeOverlay = { ...overlay, rolling: false };
+      render();
+      await delay(700);
+    } else {
+      await delay(2000);
+    }
+  }
+  activeOverlay = null;
+}
+
+async function replayEvents(events: TurnEvent[], overlays: FocusOverlay[] = []) {
   replayInProgress = true;
   replayPawns = events[0].pawnsBefore;
   currentReplayEvent = null;
@@ -334,6 +427,9 @@ async function replayEvents(events: TurnEvent[]) {
   replayPawns = null;
   replayBaseGame = null;
   replayInProgress = false;
+  if (overlays.length) await playFocusOverlays(overlays);
+  replayHandCards = null;
+  optimisticHandCards = null;
   render();
 }
 
@@ -358,16 +454,41 @@ function delay(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
+function renderFocusOverlay() {
+  if (!activeOverlay) return "";
+  if (activeOverlay.kind === "deal") {
+    return `
+      <div class="focus-overlay">
+        <div class="focus-card deal-focus">
+          <div class="die ${activeOverlay.rolling ? "rolling" : ""}">${activeOverlay.rolling ? "?" : activeOverlay.count}</div>
+        </div>
+      </div>
+    `;
+  }
+  return `
+    <div class="focus-overlay">
+      <div class="focus-card swap-focus">
+        <img src="/cards/${activeOverlay.card.asset}" alt="${escapeHtml(activeOverlay.card.label)}" />
+        <span>${escapeHtml(activeOverlay.title)}</span>
+        <strong>${escapeHtml(activeOverlay.card.label)}</strong>
+        <p>${escapeHtml(activeOverlay.text)}</p>
+      </div>
+    </div>
+  `;
+}
+
 function renderGame() {
   const game = replayInProgress && replayBaseGame ? replayBaseGame : state!.game!;
+  const latestGame = state!.game!;
   const displayedPawns = replayPawns || game.pawns;
-  const hand = state!.viewerSeat ? game.hands[state!.viewerSeat].cards || [] : [];
+  const hand = state!.viewerSeat ? optimisticHandCards ?? replayHandCards ?? latestGame.hands[state!.viewerSeat].cards ?? [] : [];
   normalizeSelection(game, hand);
   const playableNoCardAction = noCardAction(game);
   const finalAction = selectedPlayableAction(game);
   const actionOptions = selectionOptions(game);
+  const customSevenReady = customSevenActionReady(game);
   const selectablePawnIds = selectablePawns(game);
-  const canPlay = Boolean(finalAction || playableNoCardAction);
+  const canPlay = Boolean(finalAction || playableNoCardAction || customSevenReady);
   app.innerHTML = `
     <main class="game">
       <header class="game-status">
@@ -375,25 +496,27 @@ function renderGame() {
         <div>
           <span class="eyebrow">${game.phase.replace("_", " ")}</span>
           <strong>${game.winner ? `Team ${game.winner} wins` : game.activePlayer ? `${displaySeatName(game.activePlayer)} to move` : "Game over"}</strong>
+          ${game.phase === "TEAM_SWAPS" ? `<p class="round-note">First to play: ${displaySeatName(game.roundStarter)} - ${game.activeDealSize} cards</p>` : ""}
         </div>
         <button class="ghost exit-button" id="exit-game">Exit</button>
       </header>
       <section class="table-area">
         ${renderReplayBanner()}
-        ${renderBoard(displayedPawns, game.activePlayer, boardSeatLabels(), selectedPawnIds, replayInProgress ? [] : selectablePawnIds, currentReplayEvent?.affectedPawns || [])}
+        ${renderBoard(displayedPawns, game.activePlayer, boardSeatLabels(), boardSelectedPawnIds(game), replayInProgress ? [] : selectablePawnIds, currentReplayEvent?.affectedPawns || [])}
       </section>
       <section class="hand-tray">
         <div class="hand-header">
           <strong>Your hand</strong>
-          <span>${hand.length || (state!.viewerSeat ? game.hands[state!.viewerSeat].count : 0)} cards</span>
+          <span>${hand.length} cards</span>
         </div>
         <div class="cards">${hand.map((card) => renderCard(card, !replayInProgress && cardPlayable(game, card.id), selectedCardId === card.id)).join("") || `<span class="muted">No visible cards</span>`}</div>
         ${replayInProgress ? `<div class="selection-panel"><p class="muted">Resolving moves before the next hand is dealt.</p></div>` : renderSelectionControls(game, actionOptions)}
       </section>
       <section class="play-bar">
         <button id="clear-selection" class="ghost" ${hasSelection() ? "" : "disabled"}>Clear</button>
-        <button id="confirm-play" ${canPlay && !actionInFlight && !replayInProgress ? "" : "disabled"}>${replayInProgress ? "Replaying..." : actionInFlight ? "Playing..." : playButtonText(playableNoCardAction, finalAction)}</button>
+        <button id="confirm-play" ${canPlay && !actionInFlight && !replayInProgress ? "" : "disabled"}>${replayInProgress ? "Playing..." : actionInFlight ? "Playing..." : playButtonText(playableNoCardAction, finalAction)}</button>
       </section>
+      ${renderFocusOverlay()}
     </main>
   `;
   document.querySelector("#back-lobby")!.addEventListener("click", refresh);
@@ -413,6 +536,7 @@ function renderGame() {
         selectedVariant = null;
         selectedPawnIds = [];
         selectedSevenActionId = null;
+        selectedSevenMoves = [];
       }
       render();
     });
@@ -421,7 +545,9 @@ function renderGame() {
     button.addEventListener("click", () => {
       const pawnId = button.dataset.pawnId;
       if (!pawnId) return;
-      if (selectedPawnIds.includes(pawnId)) {
+      if (isCustomSevenMode(game)) {
+        toggleSevenPawn(pawnId);
+      } else if (selectedPawnIds.includes(pawnId)) {
         selectedPawnIds = selectedPawnIds.filter((id) => id !== pawnId);
       } else {
         selectedPawnIds = [...selectedPawnIds, pawnId];
@@ -430,7 +556,7 @@ function renderGame() {
       render();
     });
   });
-  document.querySelectorAll<HTMLButtonElement>(".choice-btn").forEach((button) => {
+  document.querySelectorAll<HTMLButtonElement>(".choice-btn, .step-btn").forEach((button) => {
     button.addEventListener("click", () => {
       const kind = button.dataset.kind;
       if (kind === "rank") {
@@ -447,20 +573,28 @@ function renderGame() {
       if (kind === "seven") {
         selectedSevenActionId = Number(button.dataset.value);
       }
+      if (kind === "seven-step") {
+        setSevenMoveSteps(Number(button.dataset.index), Number(button.dataset.value));
+      }
       render();
     });
   });
   document.querySelector("#confirm-play")!.addEventListener("click", async () => {
     if (actionInFlight || replayInProgress) return;
+    const sevenAction = customSevenActionPayload(game);
     const action = playableNoCardAction || selectedPlayableAction(game);
-    if (!action) return;
+    if (!action && !sevenAction) return;
+    if (action && !action.card && action.type !== "SkipTurnAction") optimisticHandCards = [];
     actionInFlight = true;
     render();
     try {
-      const payload = await playAction(gameId, token, action.key);
+      const payload = sevenAction
+        ? await playSevenSplit(gameId, token, sevenAction.cardId, sevenAction.representedRank, sevenAction.moves)
+        : await playAction(gameId, token, action!.key);
       clearSelection();
       await acceptPayload(payload, true);
     } catch (error) {
+      optimisticHandCards = null;
       toast(error);
       actionInFlight = false;
       await refresh();
@@ -476,6 +610,8 @@ let selectedRank: string | null = null;
 let selectedVariant: string | null = null;
 let selectedPawnIds: string[] = [];
 let selectedSevenActionId: number | null = null;
+type SevenDraftMove = { pawnId: string; steps: number | null };
+let selectedSevenMoves: SevenDraftMove[] = [];
 
 function normalizeSelection(game: GamePayload, hand: CardInfo[]) {
   if (selectedCardId !== null && !hand.some((card) => card.id === selectedCardId)) {
@@ -493,10 +629,11 @@ function clearSelection() {
   selectedVariant = null;
   selectedPawnIds = [];
   selectedSevenActionId = null;
+  selectedSevenMoves = [];
 }
 
 function hasSelection() {
-  return selectedCardId !== null || selectedPawnIds.length > 0 || selectedRank !== null || selectedVariant !== null || selectedSevenActionId !== null;
+  return selectedCardId !== null || selectedPawnIds.length > 0 || selectedRank !== null || selectedVariant !== null || selectedSevenActionId !== null || selectedSevenMoves.length > 0;
 }
 
 function noCardAction(game: GamePayload) {
@@ -528,6 +665,64 @@ function variantFilteredActions(game: GamePayload) {
   return actions.filter((action) => actionVariantKey(action) === selectedVariant);
 }
 
+function isCustomSevenMode(game: GamePayload) {
+  return variantFilteredActions(game).some((action) => action.type === "PlaySevenSplitAction");
+}
+
+function boardSelectedPawnIds(game: GamePayload) {
+  return isCustomSevenMode(game) ? selectedSevenMoves.map((move) => move.pawnId) : selectedPawnIds;
+}
+
+function sevenSelectablePawnIds(game: GamePayload) {
+  if (!game.activePlayer) return [];
+  const active = game.players.find((player) => player.id === game.activePlayer);
+  if (!active) return [];
+  return game.pawns
+    .filter((pawn) => pawn.position.kind !== "BASE")
+    .filter((pawn) => game.players.find((player) => player.id === pawn.owner)?.team === active.team)
+    .map((pawn) => pawn.id);
+}
+
+function toggleSevenPawn(pawnId: string) {
+  if (selectedSevenMoves.some((move) => move.pawnId === pawnId)) {
+    selectedSevenMoves = selectedSevenMoves.filter((move) => move.pawnId !== pawnId);
+    return;
+  }
+  selectedSevenMoves = [...selectedSevenMoves, { pawnId, steps: null }];
+}
+
+function setSevenMoveSteps(index: number, steps: number) {
+  selectedSevenMoves = selectedSevenMoves.map((move, moveIndex) => (moveIndex === index ? { ...move, steps } : move));
+  normalizeSevenSteps();
+}
+
+function normalizeSevenSteps() {
+  let total = 0;
+  selectedSevenMoves = selectedSevenMoves.map((move) => {
+    if (move.steps === null) return move;
+    if (total + move.steps > 7) return { ...move, steps: null };
+    total += move.steps;
+    return move;
+  });
+}
+
+function customSevenActionReady(game: GamePayload) {
+  return Boolean(customSevenActionPayload(game));
+}
+
+function customSevenActionPayload(game: GamePayload) {
+  if (!isCustomSevenMode(game) || selectedCardId === null) return null;
+  if (!selectedSevenMoves.length || selectedSevenMoves.some((move) => move.steps === null)) return null;
+  const total = selectedSevenMoves.reduce((sum, move) => sum + (move.steps || 0), 0);
+  if (total !== 7) return null;
+  const representedRank = variantFilteredActions(game).find((action) => action.type === "PlaySevenSplitAction")?.representedRank || "7";
+  return {
+    cardId: selectedCardId,
+    representedRank,
+    moves: selectedSevenMoves.map((move) => ({ pawn_id: move.pawnId, steps: move.steps!, prefer_safe_entry: true })),
+  };
+}
+
 function selectedPlayableAction(game: GamePayload) {
   const actions = variantFilteredActions(game);
   if (selectedCardId === null) return null;
@@ -553,12 +748,13 @@ function selectionOptions(game: GamePayload) {
 }
 
 function selectablePawns(game: GamePayload) {
+  if (isCustomSevenMode(game)) return sevenSelectablePawnIds(game);
   const actions = variantFilteredActions(game);
   return unique(actions.flatMap((action) => action.pawns.map((pawn) => pawn.id)));
 }
 
 function renderSelectionControls(game: GamePayload, options: ReturnType<typeof selectionOptions>) {
-  if (!selectedCardId && !noCardAction(game)) {
+  if (selectedCardId === null && !noCardAction(game)) {
     return `<div class="selection-panel"><p class="muted">Select a card to begin.</p></div>`;
   }
   if (noCardAction(game)) {
@@ -573,11 +769,49 @@ function renderSelectionControls(game: GamePayload, options: ReturnType<typeof s
   }
   const actions = variantFilteredActions(game);
   if (actions.some((action) => action.type === "PlaySevenSplitAction")) {
-    parts.push(`<div class="choice-group"><span>Select all figures used by the 7.</span>${options.sevenOptions.length ? options.sevenOptions.map((action) => `<button class="choice-btn ${selectedSevenActionId === action.id ? "selected" : ""}" data-kind="seven" data-value="${action.id}">${escapeHtml(action.label)}</button>`).join("") : `<p class="muted">Matching 7 options will appear here.</p>`}</div>`);
+    parts.push(renderSevenBuilder(game));
   } else if (actions.some((action) => action.type !== "SwapCardAction")) {
     parts.push(`<p class="muted">Select the involved figure${actions.some((action) => action.type === "PlayJackSwapAction") ? "s" : ""} on the board.</p>`);
   }
   return `<div class="selection-panel">${parts.join("")}</div>`;
+}
+
+function renderSevenBuilder(game: GamePayload) {
+  const remaining = 7 - selectedSevenMoves.reduce((total, move) => total + (move.steps || 0), 0);
+  const total = 7 - remaining;
+  const parts = selectedSevenMoves.map((move, index) => {
+    const pawn = game.pawns.find((item) => item.id === move.pawnId);
+    if (!pawn) return "";
+    const otherTotal = selectedSevenMoves.reduce((sum, other, otherIndex) => sum + (otherIndex === index ? 0 : other.steps || 0), 0);
+    const maxForMove = 7 - otherTotal;
+    return `
+      <div class="seven-move">
+        <div class="seven-move-head">
+          <span class="order-pill">${index + 1}</span>
+          ${renderPawnBadge(pawn)}
+        </div>
+        <div class="step-grid">
+          ${[1, 2, 3, 4, 5, 6, 7]
+            .map((step) => `<button type="button" class="step-btn ${move.steps === step ? "selected" : ""}" data-kind="seven-step" data-index="${index}" data-value="${step}" ${step > maxForMove ? "disabled" : ""}>${step}</button>`)
+            .join("")}
+        </div>
+      </div>
+    `;
+  });
+  return `
+    <div class="seven-builder">
+      <div class="seven-summary">
+        <span>Select figures in move order</span>
+        <strong>${total}/7</strong>
+      </div>
+      ${parts.length ? parts.join("") : `<p class="muted">Tap the figures on the board in the order they should move.</p>`}
+      ${remaining < 0 ? `<p class="muted">The split must total exactly 7.</p>` : remaining > 0 ? `<p class="muted">${remaining} step${remaining === 1 ? "" : "s"} remaining.</p>` : `<p class="muted">Ready to play this split.</p>`}
+    </div>
+  `;
+}
+
+function renderPawnBadge(pawn: PawnInfo) {
+  return `<span class="pawn-badge" style="--pawn-color:${pawn.color}">${pawn.number + 1}</span>`;
 }
 
 function renderChoiceGroup(title: string, kind: string, values: string[], selected: string | null, labeler: (value: string) => string) {

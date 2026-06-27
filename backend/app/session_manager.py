@@ -8,12 +8,15 @@ from typing import Any, Dict, Optional
 
 from fastapi import HTTPException, WebSocket
 
-from brandi_dog.engine.actions import SwapCardAction
+from brandi_dog.engine.actions import PlaySevenSplitAction, SevenSubMove, SkipTurnAction, SwapCardAction
 from brandi_dog.engine.engine import GameEngine
-from brandi_dog.engine.state import GameState, PlayerId, RoundStage
+from brandi_dog.engine.state import GameState, PawnRef, PlayerId, RoundStage
 
 from .bots import BOT_LEVELS, build_bot
-from .schemas import LobbyPlayer, PublicSession, SeatInfo
+from brandi_dog.engine.cards import Rank
+from brandi_dog.engine import rules as engine_rules
+
+from .schemas import LobbyPlayer, PublicSession, SeatInfo, SevenSplitMoveRequest
 from .serialization import action_key, active_player, describe_action, serialize_action, serialize_game, serialize_pawns
 
 
@@ -108,11 +111,22 @@ class SessionManager:
                     session.bot_agents[seat] = build_bot(session.bot_levels[seat], seed=secrets.randbelow(1_000_000_000))
             session.phase = "PLAYING"
             events: list[dict[str, Any]] = []
-            self._advance_bots_locked(session, events)
+            pause_for_swap = self._advance_automatic_locked(session, events)
         await self._broadcast(session, events)
+        if pause_for_swap:
+            self._schedule_automatic_after_swap_overlay(session)
         return session, events
 
-    async def apply_action(self, game_id: str, token: str, action_id: Optional[int], selected_action_key: Optional[str]) -> tuple[GameSession, list[dict[str, Any]]]:
+    async def apply_action(
+        self,
+        game_id: str,
+        token: str,
+        action_id: Optional[int],
+        selected_action_key: Optional[str],
+        card_id: Optional[int] = None,
+        represented_rank: Optional[str] = None,
+        seven_moves: Optional[list[SevenSplitMoveRequest]] = None,
+    ) -> tuple[GameSession, list[dict[str, Any]]]:
         session = self._get(game_id)
         async with session.lock:
             self._ensure_playing(session)
@@ -122,13 +136,61 @@ class SessionManager:
                 raise HTTPException(status_code=409, detail="Game is over")
             if player.seat != actor:
                 raise HTTPException(status_code=403, detail="It is not your turn")
-            legal = session.engine.legal_actions(session.state)
-            action = self._select_legal_action(legal, action_id, selected_action_key)
             events: list[dict[str, Any]] = []
-            self._apply_action_locked(session, action, events)
-            self._advance_bots_locked(session, events)
+            if seven_moves is not None:
+                action = self._build_custom_seven_action(actor, card_id, represented_rank, seven_moves)
+                self._apply_custom_seven_locked(session, action, events)
+            else:
+                legal = session.engine.legal_actions(session.state)
+                action = self._select_legal_action(legal, action_id, selected_action_key)
+                self._apply_action_locked(session, action, events)
+            pause_for_swap = self._advance_automatic_locked(session, events)
         await self._broadcast(session, events)
+        if pause_for_swap:
+            self._schedule_automatic_after_swap_overlay(session)
         return session, events
+
+    def _build_custom_seven_action(
+        self,
+        actor: PlayerId,
+        card_id: Optional[int],
+        represented_rank: Optional[str],
+        moves: list[SevenSplitMoveRequest],
+    ) -> PlaySevenSplitAction:
+        if card_id is None:
+            raise HTTPException(status_code=400, detail="Seven split card is required")
+        if not moves:
+            raise HTTPException(status_code=400, detail="Seven split moves are required")
+        try:
+            rank = Rank(represented_rank or "7")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Invalid represented rank for seven split") from exc
+        if rank != Rank.SEVEN:
+            raise HTTPException(status_code=400, detail="Custom split must play the card as 7")
+        return PlaySevenSplitAction(
+            player=actor,
+            card_id=card_id,
+            represented_rank=rank,
+            moves=tuple(
+                SevenSubMove(
+                    pawn=self._parse_pawn_id(move.pawn_id),
+                    steps=move.steps,
+                    prefer_safe_entry=move.prefer_safe_entry,
+                )
+                for move in moves
+            ),
+        )
+
+    def _parse_pawn_id(self, raw: str) -> PawnRef:
+        try:
+            owner_name, number_raw = raw.split("-", 1)
+            owner = PlayerId[owner_name]
+            number = int(number_raw)
+        except (ValueError, KeyError) as exc:
+            raise HTTPException(status_code=400, detail="Invalid pawn id") from exc
+        if number < 0 or number > 3:
+            raise HTTPException(status_code=400, detail="Invalid pawn id")
+        return PawnRef(owner=owner, number=number)
 
     def _select_legal_action(self, legal, action_id: Optional[int], selected_action_key: Optional[str]):
         if selected_action_key:
@@ -185,29 +247,67 @@ class SessionManager:
     async def send_ws_state(self, session: GameSession, websocket: WebSocket, token: Optional[str]) -> None:
         await websocket.send_json(self.game_payload(session, token))
 
-    def _advance_bots_locked(self, session: GameSession, events: Optional[list[dict[str, Any]]] = None) -> None:
+    def _advance_automatic_locked(self, session: GameSession, events: Optional[list[dict[str, Any]]] = None) -> bool:
         assert session.engine is not None
         assert session.state is not None
         guard = 0
         while session.state.round_stage != RoundStage.GAME_OVER and guard < 200:
             actor = active_player(session.state)
-            if actor is None or actor not in session.bot_agents:
+            if actor is None:
                 break
-            action = session.bot_agents[actor].select_action(session.engine, session.state)
-            self._apply_action_locked(session, action, events)
+            legal = session.engine.legal_actions(session.state)
+            if actor in session.bot_agents:
+                action = session.bot_agents[actor].select_action(session.engine, session.state)
+            elif len(legal) == 1 and isinstance(legal[0], SkipTurnAction):
+                action = legal[0]
+            else:
+                break
+            completed_swap = self._apply_action_locked(session, action, events)
             guard += 1
+            if completed_swap:
+                return True
         if session.state.round_stage == RoundStage.GAME_OVER:
             session.phase = "FINISHED"
+        return False
 
-    def _apply_action_locked(self, session: GameSession, action, events: Optional[list[dict[str, Any]]] = None) -> None:
+    def _apply_action_locked(self, session: GameSession, action, events: Optional[list[dict[str, Any]]] = None) -> bool:
         assert session.engine is not None
         assert session.state is not None
         before_state = session.state
         before_pawns = serialize_pawns(before_state)
         session.state = session.engine.step(session.state, action)
+        completed_swap = isinstance(action, SwapCardAction) and session.state.hands != before_state.hands
         if events is not None and not isinstance(action, SwapCardAction):
             after_pawns = serialize_pawns(session.state)
             events.append(self._turn_event(session, action, before_pawns, after_pawns))
+        return completed_swap
+
+    def _schedule_automatic_after_swap_overlay(self, session: GameSession) -> None:
+        asyncio.create_task(self._continue_automatic_after_swap_overlay(session))
+
+    async def _continue_automatic_after_swap_overlay(self, session: GameSession) -> None:
+        await asyncio.sleep(2.1)
+        events: list[dict[str, Any]] = []
+        async with session.lock:
+            if session.phase not in {"PLAYING", "FINISHED"} or session.engine is None or session.state is None:
+                return
+            pause_for_swap = self._advance_automatic_locked(session, events)
+        await self._broadcast(session, events)
+        if pause_for_swap:
+            self._schedule_automatic_after_swap_overlay(session)
+
+    def _apply_custom_seven_locked(self, session: GameSession, action: PlaySevenSplitAction, events: list[dict[str, Any]]) -> None:
+        assert session.engine is not None
+        assert session.state is not None
+        before_pawns = serialize_pawns(session.state)
+        try:
+            session.state = engine_rules._apply_play_seven_action(session.state, action, session.engine.cards_by_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        after_pawns = serialize_pawns(session.state)
+        events.append(self._turn_event(session, action, before_pawns, after_pawns))
+        if session.state.round_stage == RoundStage.GAME_OVER:
+            session.phase = "FINISHED"
 
     def _turn_event(self, session: GameSession, action, before_pawns: list[dict[str, Any]], after_pawns: list[dict[str, Any]]) -> dict[str, Any]:
         assert session.engine is not None

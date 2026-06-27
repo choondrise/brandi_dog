@@ -31,6 +31,11 @@ app.add_middleware(
 )
 
 
+@app.get("/")
+def root():
+    return {"ok": True, "service": "Brandi Dog Online API", "health": "/api/health"}
+
+
 @app.get("/api/health", response_model=HealthResponse)
 def health() -> HealthResponse:
     return HealthResponse()
@@ -75,7 +80,15 @@ async def start_game(game_id: str, request: StartRequest):
 
 @app.post("/api/sessions/{game_id}/action")
 async def apply_action(game_id: str, request: ActionRequest):
-    session, events = await manager.apply_action(game_id, request.token, request.action_id, request.action_key)
+    session, events = await manager.apply_action(
+        game_id,
+        request.token,
+        request.action_id,
+        request.action_key,
+        request.card_id,
+        request.represented_rank,
+        request.seven_moves,
+    )
     return manager.game_payload(session, request.token, events)
 
 

@@ -247,6 +247,14 @@ label {
   border-color: rgba(116, 45, 42, 0.35);
 }
 
+.round-note {
+  margin: 2px 0 0;
+  color: #637065;
+  font-size: 0.78rem;
+  font-weight: 750;
+  line-height: 1.25;
+}
+
 .seat-grid {
   display: grid;
   gap: 12px;
@@ -509,6 +517,84 @@ label {
   line-height: 1.25;
 }
 
+.focus-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(23, 37, 29, 0.62);
+  backdrop-filter: blur(4px);
+}
+
+.focus-card {
+  width: min(82vw, 260px);
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 18px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 250, 242, 0.5);
+  background: #fffaf2;
+  color: #17251d;
+  text-align: center;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.34);
+}
+
+.focus-card img {
+  width: 96px;
+  height: 134px;
+  border-radius: 7px;
+  object-fit: cover;
+  border: 1px solid #d8c4a9;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(33, 27, 19, 0.18);
+}
+
+.focus-card span {
+  color: #637065;
+  font-size: 0.72rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.focus-card strong {
+  color: #143d2b;
+  font-size: 1.15rem;
+}
+
+.focus-card p {
+  margin: 0;
+  color: #26352b;
+  font-size: 0.88rem;
+  line-height: 1.35;
+}
+
+.die {
+  width: 78px;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  background: #fff;
+  border: 3px solid #143d2b;
+  color: #143d2b;
+  font-size: 2.2rem;
+  font-weight: 950;
+  box-shadow: 0 8px 24px rgba(33, 27, 19, 0.18);
+}
+
+.die.rolling {
+  animation: die-roll 180ms steps(2, end) infinite;
+}
+
+@keyframes die-roll {
+  0% { transform: rotate(-10deg) translateY(-2px); }
+  50% { transform: rotate(12deg) translateY(2px); }
+  100% { transform: rotate(-10deg) translateY(-2px); }
+}
+
 .cards,
 .actions {
   display: flex;
@@ -578,6 +664,91 @@ label {
 .choice-btn.selected {
   background: #143d2b;
   color: #fff;
+}
+
+.seven-builder {
+  display: grid;
+  gap: 10px;
+}
+
+.seven-summary,
+.seven-move-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.seven-summary span {
+  color: #637065;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.seven-summary strong {
+  color: #143d2b;
+  font-size: 1rem;
+}
+
+.seven-move {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #dfcfb8;
+  border-radius: 8px;
+  background: #fffaf2;
+}
+
+.order-pill {
+  display: inline-grid;
+  width: 26px;
+  aspect-ratio: 1;
+  place-items: center;
+  border-radius: 6px;
+  background: #143d2b;
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.pawn-badge {
+  display: inline-grid;
+  width: 34px;
+  aspect-ratio: 1;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--pawn-color);
+  color: #fff;
+  border: 2px solid #1c241f;
+  font-size: 0.84rem;
+  font-weight: 900;
+  box-shadow: 0 2px 5px rgba(33, 27, 19, 0.25);
+}
+
+.step-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.step-btn {
+  min-width: 0;
+  min-height: 38px;
+  padding: 0;
+  border: 1px solid #cdbba4;
+  background: #fff;
+  color: #143d2b;
+}
+
+.step-btn.selected {
+  background: #143d2b;
+  color: #fff;
+}
+
+.step-btn:disabled {
+  background: #efe5d7;
+  color: #9b8e7c;
 }
 
 .play-bar {

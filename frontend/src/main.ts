@@ -2,7 +2,7 @@ import "./styles.css";
 import rulesMarkdown from "./rules.md?raw";
 import { inject } from "@vercel/analytics";
 import { API_BASE, WS_BASE, createSession, getState, joinSession, playAction, playSevenSplit, setBot, setSeat, startGame } from "./api";
-import { renderBoard } from "./board";
+import { getEntryIndex, renderBoard, type PreviewPosition } from "./board";
 import type { ActionInfo, AppPayload, BotLevel, CardInfo, GamePayload, PawnInfo, Seat, TurnEvent } from "./types";
 
 inject({ framework: "vite" });
@@ -30,14 +30,27 @@ type FocusOverlay =
 let activeOverlay: FocusOverlay | null = null;
 let replayHandCards: CardInfo[] | null = null;
 let optimisticHandCards: CardInfo[] | null = null;
+type EndGameOverlay = { gameId: string; outcome: "win" | "lose"; phase: "splash" | "prompt" };
+let endGameOverlay: EndGameOverlay | null = null;
+let handledEndGameId = "";
+let endGameFlowInProgress = false;
 
 function saveIdentity(nextGameId: string, nextToken: string, nextHostToken = "") {
+  socket?.close();
+  socket = null;
+  endGameOverlay = null;
+  handledEndGameId = "";
+  endGameFlowInProgress = false;
   gameId = nextGameId.toUpperCase();
   token = nextToken;
-  if (nextHostToken) hostToken = nextHostToken;
+  hostToken = nextHostToken;
   localStorage.setItem("brandi.gameId", gameId);
   localStorage.setItem("brandi.token", token);
-  if (hostToken) localStorage.setItem("brandi.hostToken", hostToken);
+  if (hostToken) {
+    localStorage.setItem("brandi.hostToken", hostToken);
+  } else {
+    localStorage.removeItem("brandi.hostToken");
+  }
 }
 
 function confirmExitGame() {
@@ -62,6 +75,9 @@ function clearIdentity() {
   currentReplayEvent = null;
   replayHandCards = null;
   optimisticHandCards = null;
+  endGameOverlay = null;
+  handledEndGameId = "";
+  endGameFlowInProgress = false;
   seenEventIds = new Set<string>();
   render();
 }
@@ -303,17 +319,17 @@ function renderSeatCard(seat: Seat) {
   const mine = state!.viewerSeat === seat;
   const human = info.occupant === "human";
   return `
-    <article class="seat-card ${mine ? "mine" : ""}">
+    <article class="seat-card ${mine ? "mine" : ""} ${human ? "occupied" : ""}">
       <div class="seat-head">
         <strong>${seat}</strong>
         <span>Team ${info.team}</span>
       </div>
-      <p class="occupant">${human ? info.human_name : `${info.bot_level} bot`}</p>
-      <button id="sit-${seat}" ${human && !mine ? "disabled" : ""}>${mine ? "Your seat" : "Take seat"}</button>
+      <p class="occupant">${human ? info.human_name : `${botLevelLabel(info.bot_level)} bot`}</p>
+      <button id="sit-${seat}" ${human ? "disabled" : ""}>${mine ? "Your seat" : "Take seat"}</button>
       <label class="bot-select">
         Bot
         <select id="bot-${seat}" ${state!.isHost && !human ? "" : "disabled"}>
-          ${botLevels.map((level) => `<option value="${level}" ${info.bot_level === level ? "selected" : ""}>${level}</option>`).join("")}
+          ${botLevels.map((level) => `<option value="${level}" ${info.bot_level === level ? "selected" : ""}>${botLevelLabel(level)}</option>`).join("")}
         </select>
       </label>
     </article>
@@ -334,10 +350,12 @@ async function acceptPayload(payload: AppPayload, replay = false) {
     replayHandCards = null;
     optimisticHandCards = null;
     render();
+    void maybeStartEndGameFlow(payload);
     return;
   }
   replayBaseGame = previousGame;
   await replayEvents(events, overlays);
+  void maybeStartEndGameFlow(payload);
 }
 
 function focusOverlaysForPayload(previousGame: GamePayload | null, payload: AppPayload) {
@@ -418,10 +436,12 @@ async function replayEvents(events: TurnEvent[], overlays: FocusOverlay[] = []) 
     currentReplayEvent = event;
     replayPawns = event.pawnsBefore;
     render();
-    await delay(event.isBot ? 1520 : 360);
+    const replayMultiplier = isReplayMovementEvent(event) ? 1.3 : 1;
+    await delay(Math.round((event.isBot ? 1520 : 360) * replayMultiplier));
     replayPawns = event.pawnsAfter;
     render();
-    await delay(event.isBot ? (event.affectedPawns.length ? 1760 : 1460) : event.affectedPawns.length ? 760 : 460);
+    const settleDelay = event.isBot ? (event.affectedPawns.length ? 1760 : 1460) : event.affectedPawns.length ? 760 : 460;
+    await delay(Math.round(settleDelay * replayMultiplier));
   }
   currentReplayEvent = null;
   replayPawns = null;
@@ -431,6 +451,37 @@ async function replayEvents(events: TurnEvent[], overlays: FocusOverlay[] = []) 
   replayHandCards = null;
   optimisticHandCards = null;
   render();
+}
+
+async function maybeStartEndGameFlow(payload: AppPayload) {
+  if (endGameFlowInProgress || !payload.viewerSeat || !payload.game?.winner || payload.game.phase !== "GAME_OVER") return;
+  if (handledEndGameId === payload.session.game_id) return;
+  const viewerTeam = payload.game.players.find((player) => player.id === payload.viewerSeat)?.team;
+  if (!viewerTeam) return;
+  handledEndGameId = payload.session.game_id;
+  endGameFlowInProgress = true;
+  endGameOverlay = { gameId: payload.session.game_id, outcome: viewerTeam === payload.game.winner ? "win" : "lose", phase: "splash" };
+  render();
+  await delay(1000);
+  if (endGameOverlay?.gameId === payload.session.game_id && endGameOverlay.phase === "splash") {
+    endGameOverlay = { ...endGameOverlay, phase: "prompt" };
+    render();
+  }
+  endGameFlowInProgress = false;
+}
+
+function renderTurnNotice(game: GamePayload) {
+  if (currentReplayEvent || replayInProgress || actionInFlight || endGameOverlay) return "";
+  if (!state?.viewerSeat || game.phase !== "PLAY_LOOP" || game.activePlayer !== state.viewerSeat) return "";
+  if (selectedCardId !== null || noCardAction(game)) return "";
+  return `
+    <div class="replay-banner turn-notice human">
+      <div>
+        <span>YOUR TURN</span>
+        <strong>Pick a card to play</strong>
+      </div>
+    </div>
+  `;
 }
 
 function renderReplayBanner() {
@@ -477,6 +528,47 @@ function renderFocusOverlay() {
   `;
 }
 
+function renderEndGameOverlay() {
+  if (!endGameOverlay) return "";
+  const won = endGameOverlay.outcome === "win";
+  const title = won ? "You win" : "You lose";
+  if (endGameOverlay.phase === "splash") {
+    return `
+      <div class="endgame-overlay">
+        <div class="endgame-splash ${won ? "win" : "lose"}">${title}</div>
+      </div>
+    `;
+  }
+  return `
+    <div class="endgame-overlay">
+      <div class="endgame-dialog ${won ? "win" : "lose"}">
+        <strong>${title}</strong>
+        <button id="play-again" type="button">Play again</button>
+      </div>
+    </div>
+  `;
+}
+
+async function playAgain() {
+  if (actionInFlight) return;
+  actionInFlight = true;
+  render();
+  try {
+    const playerName = state?.viewerSeat ? state.session.seats[state.viewerSeat].human_name || "Player" : "Player";
+    const created = await createSession(playerName);
+    saveIdentity(created.game_id, created.player_token, created.host_token);
+    seenEventIds = new Set<string>();
+    actionInFlight = false;
+    await refresh();
+  } catch (error) {
+    actionInFlight = false;
+    toast(error);
+    render();
+  } finally {
+    actionInFlight = false;
+  }
+}
+
 function renderGame() {
   const game = replayInProgress && replayBaseGame ? replayBaseGame : state!.game!;
   const latestGame = state!.game!;
@@ -488,6 +580,9 @@ function renderGame() {
   const actionOptions = selectionOptions(game);
   const customSevenReady = customSevenActionReady(game);
   const selectablePawnIds = selectablePawns(game);
+  const preview = pathPreview(game, finalAction);
+  const boardActivePlayer = currentReplayEvent?.actor || game.activePlayer;
+  const slowMotion = isReplayMovementEvent(currentReplayEvent);
   const canPlay = Boolean(finalAction || playableNoCardAction || customSevenReady);
   app.innerHTML = `
     <main class="game">
@@ -502,7 +597,8 @@ function renderGame() {
       </header>
       <section class="table-area">
         ${renderReplayBanner()}
-        ${renderBoard(displayedPawns, game.activePlayer, boardSeatLabels(), boardSelectedPawnIds(game), replayInProgress ? [] : selectablePawnIds, currentReplayEvent?.affectedPawns || [])}
+        ${renderTurnNotice(game)}
+        ${renderBoard(displayedPawns, boardActivePlayer, boardSeatLabels(), boardSelectedPawnIds(game), replayInProgress ? [] : selectablePawnIds, currentReplayEvent?.affectedPawns || [], preview.positions, preview.capturePawnIds, slowMotion)}
       </section>
       <section class="hand-tray">
         <div class="hand-header">
@@ -517,10 +613,12 @@ function renderGame() {
         <button id="confirm-play" ${canPlay && !actionInFlight && !replayInProgress ? "" : "disabled"}>${replayInProgress ? "Playing..." : actionInFlight ? "Playing..." : playButtonText(playableNoCardAction, finalAction)}</button>
       </section>
       ${renderFocusOverlay()}
+      ${renderEndGameOverlay()}
     </main>
   `;
   document.querySelector("#back-lobby")!.addEventListener("click", refresh);
   document.querySelector("#exit-game")!.addEventListener("click", confirmExitGame);
+  document.querySelector("#play-again")?.addEventListener("click", playAgain);
   document.querySelector("#clear-selection")!.addEventListener("click", () => {
     clearSelection();
     render();
@@ -753,6 +851,185 @@ function selectablePawns(game: GamePayload) {
   return unique(actions.flatMap((action) => action.pawns.map((pawn) => pawn.id)));
 }
 
+function pathPreview(game: GamePayload, finalAction: ActionInfo | null) {
+  if (replayInProgress) return emptyPreview();
+  if (isCustomSevenMode(game)) return customSevenPreview(game);
+  const action = finalAction || singleSelectedPawnPreviewAction(game);
+  return action ? actionPreview(game, action) : emptyPreview();
+}
+
+function emptyPreview() {
+  return { positions: [] as PreviewPosition[], capturePawnIds: [] as string[] };
+}
+
+function singleSelectedPawnPreviewAction(game: GamePayload) {
+  if (selectedPawnIds.length !== 1) return null;
+  const pawnId = selectedPawnIds[0];
+  const candidates = variantFilteredActions(game).filter(
+    (action) =>
+      (action.type === "PlayStepCardAction" || action.type === "PlayEnterAction") &&
+      action.pawns.length === 1 &&
+      action.pawns[0].id === pawnId,
+  );
+  return candidates.length === 1 ? candidates[0] : null;
+}
+
+function customSevenPreview(game: GamePayload) {
+  return sevenMovesPreview(
+    game,
+    selectedSevenMoves
+      .filter((move): move is { pawnId: string; steps: number } => move.steps !== null)
+      .map((move) => ({ pawnId: move.pawnId, steps: move.steps, preferSafeEntry: true })),
+  );
+}
+
+function actionPreview(game: GamePayload, action: ActionInfo) {
+  if (action.type === "PlayEnterAction" && action.pawns[0]) {
+    const position = { kind: "TRACK", index: getEntryIndex(action.pawns[0].owner) } satisfies PreviewPosition;
+    return { positions: [position], capturePawnIds: capturePawnIdsAtPositions(game.pawns, [position], []) };
+  }
+  if (action.type === "PlayStepCardAction" && action.pawns[0] && action.steps !== null && action.direction !== null) {
+    const pawn = game.pawns.find((item) => item.id === action.pawns[0].id);
+    if (!pawn) return emptyPreview();
+    const preview = simulatePreviewMove(pawn, action.steps, action.direction, action.preferSafeEntry ?? true, actionAllowsImmediateSafeEntry(game, action));
+    return { positions: uniquePreviewPositions(preview.positions), capturePawnIds: capturePawnIdsAtPositions(game.pawns, preview.end ? [preview.end] : [], [pawn.id]) };
+  }
+  if (action.type === "PlaySevenSplitAction") {
+    return sevenMovesPreview(
+      game,
+      action.moves.map((move) => ({ pawnId: move.pawn.id, steps: move.steps, preferSafeEntry: move.preferSafeEntry })),
+    );
+  }
+  return emptyPreview();
+}
+
+function sevenMovesPreview(game: GamePayload, moves: { pawnId: string; steps: number; preferSafeEntry: boolean }[]) {
+  const virtualPawns = game.pawns.map((pawn) => ({ ...pawn, position: { ...pawn.position } }));
+  const positions: PreviewPosition[] = [];
+  const capturePawnIds: string[] = [];
+
+  for (const move of moves) {
+    const pawn = virtualPawns.find((item) => item.id === move.pawnId);
+    if (!pawn) continue;
+    const preview = simulatePreviewMove(pawn, move.steps, "FORWARD", move.preferSafeEntry, false);
+    positions.push(...preview.positions);
+
+    const passCapturePositions = preview.positions.filter((position) => position.kind === "TRACK" && !entryOwner(position.index));
+    const capturedThisMove = capturePawnIdsAtPositions(virtualPawns, [...passCapturePositions, ...(preview.end ? [preview.end] : [])], [pawn.id]);
+    for (const capturedId of capturedThisMove) {
+      if (!capturePawnIds.includes(capturedId)) capturePawnIds.push(capturedId);
+      const capturedPawn = virtualPawns.find((item) => item.id === capturedId);
+      if (capturedPawn) capturedPawn.position = { kind: "BASE", index: null };
+    }
+    if (preview.end) pawn.position = { ...preview.end };
+  }
+
+  return { positions: uniquePreviewPositions(positions), capturePawnIds };
+}
+
+function actionAllowsImmediateSafeEntry(game: GamePayload, action: ActionInfo) {
+  if (action.type !== "PlayStepCardAction" || !action.preferSafeEntry || action.steps === null || action.direction !== "FORWARD" || !action.pawns[0]) return false;
+  return game.legalActions.some(
+    (other) =>
+      other.type === "PlayStepCardAction" &&
+      other.card?.id === action.card?.id &&
+      other.representedRank === action.representedRank &&
+      other.pawns[0]?.id === action.pawns[0].id &&
+      other.steps === action.steps &&
+      other.direction === action.direction &&
+      other.preferSafeEntry === false,
+  );
+}
+
+function simulatePreviewMove(
+  pawn: PawnInfo,
+  steps: number,
+  direction: "FORWARD" | "BACKWARD",
+  preferSafeEntry: boolean,
+  allowImmediateSafeEntry: boolean,
+) {
+  const positions: PreviewPosition[] = [];
+  if (pawn.position.index === null) return { positions, end: null as PreviewPosition | null };
+  if (pawn.position.kind === "SAFE") {
+    if (direction === "BACKWARD") return { positions, end: null as PreviewPosition | null };
+    for (let offset = 1; offset <= steps; offset += 1) {
+      const safeIndex = pawn.position.index + offset;
+      if (safeIndex < 4) positions.push({ kind: "SAFE", owner: pawn.owner, index: safeIndex });
+    }
+    return { positions, end: positions.at(-1) || null };
+  }
+  if (pawn.position.kind !== "TRACK") return { positions, end: null as PreviewPosition | null };
+
+  let trackIndex = pawn.position.index;
+  let safeIndex: number | null = null;
+  let remaining = steps;
+  let crossedOwnEntryDuringPreview = false;
+  const ownEntry = getEntryIndex(pawn.owner);
+
+  while (remaining > 0) {
+    if (direction === "BACKWARD") {
+      trackIndex = (trackIndex + 63) % 64;
+      positions.push({ kind: "TRACK", index: trackIndex });
+      remaining -= 1;
+      continue;
+    }
+    if (safeIndex !== null) {
+      safeIndex += 1;
+      if (safeIndex < 4) positions.push({ kind: "SAFE", owner: pawn.owner, index: safeIndex });
+      remaining -= 1;
+      continue;
+    }
+    if (preferSafeEntry && trackIndex === ownEntry && (allowImmediateSafeEntry || crossedOwnEntryDuringPreview)) {
+      safeIndex = 0;
+      positions.push({ kind: "SAFE", owner: pawn.owner, index: safeIndex });
+      remaining -= 1;
+      continue;
+    }
+
+    const previousTrackIndex = trackIndex;
+    const candidate = (trackIndex + 1) % 64;
+    const candidateEntryOwner = entryOwner(candidate);
+    trackIndex = candidate;
+    if (candidateEntryOwner && candidateEntryOwner !== pawn.owner) continue;
+
+    positions.push({ kind: "TRACK", index: trackIndex });
+    remaining -= 1;
+    if (trackIndex === ownEntry && previousTrackIndex === (ownEntry + 63) % 64) crossedOwnEntryDuringPreview = true;
+  }
+  return { positions, end: positions.at(-1) || null };
+}
+
+function entryOwner(trackIndex: number) {
+  return seats.find((seat) => getEntryIndex(seat) === trackIndex) || null;
+}
+
+function capturePawnIdsAtPositions(pawns: PawnInfo[], positions: PreviewPosition[], ignoredPawnIds: string[]) {
+  const ignored = new Set(ignoredPawnIds);
+  const keys = new Set(positions.map(previewPositionKey));
+  return pawns
+    .filter((pawn) => !ignored.has(pawn.id))
+    .filter((pawn) => pawn.position.index !== null && keys.has(previewPositionKey({ kind: pawn.position.kind, owner: pawn.owner, index: pawn.position.index })))
+    .map((pawn) => pawn.id);
+}
+
+function previewPositionKey(position: PreviewPosition) {
+  return position.kind === "TRACK" ? `T:${position.index}` : `S:${position.owner}:${position.index}`;
+}
+
+function uniquePreviewPositions(positions: PreviewPosition[]) {
+  const seen = new Set<string>();
+  return positions.filter((position) => {
+    const key = previewPositionKey(position);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function isReplayMovementEvent(event: TurnEvent | null) {
+  return Boolean(event && event.type !== "DiscardHandAction" && event.type !== "SkipTurnAction" && event.affectedPawns.length > 0);
+}
+
 function renderSelectionControls(game: GamePayload, options: ReturnType<typeof selectionOptions>) {
   if (selectedCardId === null && !noCardAction(game)) {
     return `<div class="selection-panel"><p class="muted">Select a card to begin.</p></div>`;
@@ -842,6 +1119,12 @@ function variantLabel(value: string) {
   const [, direction, steps, preferSafe] = value.split(":");
   if (direction === "BACKWARD") return `Move -${steps}`;
   return preferSafe === "false" ? `Move +${steps} on track` : `Move +${steps}`;
+}
+
+function botLevelLabel(level: BotLevel) {
+  if (level === "Idiot") return "Idi(b)ot";
+  if (level === "Cheater") return "Mista Gridi Chitar";
+  return level;
 }
 
 function rankLabel(value: string) {

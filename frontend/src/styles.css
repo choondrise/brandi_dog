@@ -11,6 +11,7 @@
 
 body {
   margin: 0;
+  overflow-x: hidden;
   min-height: 100vh;
   background:
     linear-gradient(180deg, rgba(20, 61, 43, 0.08), transparent 34%),
@@ -25,6 +26,8 @@ select {
 
 button {
   min-height: 44px;
+  font-size: 16px;
+  touch-action: manipulation;
   border: 0;
   border-radius: 8px;
   background: #143d2b;
@@ -38,9 +41,14 @@ select:disabled {
   opacity: 0.45;
 }
 
+button:disabled {
+  cursor: default;
+}
+
 input,
 select {
   width: 100%;
+  font-size: 16px;
   min-height: 44px;
   border: 1px solid #d4c6b1;
   border-radius: 8px;
@@ -243,7 +251,7 @@ label {
 }
 
 .exit-button {
-  color: #742d2a;
+  color: #b32822;
   border-color: rgba(116, 45, 42, 0.35);
 }
 
@@ -272,7 +280,14 @@ label {
 }
 
 .seat-card.mine {
+  position: relative;
   outline: 3px solid rgba(20, 61, 43, 0.2);
+  background: rgba(20, 61, 43, 0.07);
+}
+
+
+.seat-card.occupied:not(.mine) {
+  filter: saturate(0.72);
 }
 
 .seat-head strong {
@@ -383,6 +398,7 @@ label {
 }
 
 .pawn {
+  --pawn-transition: 420ms;
   width: 5.3%;
   min-height: 0;
   padding: 0;
@@ -396,11 +412,41 @@ label {
   font-size: clamp(0.55rem, 2.6vw, 0.82rem);
   font-weight: 900;
   box-shadow: 0 2px 5px rgba(33, 27, 19, 0.34);
-  transition: left 420ms ease, top 420ms ease, transform 180ms ease, box-shadow 180ms ease, outline-color 180ms ease;
+  transition: left var(--pawn-transition) ease, top var(--pawn-transition) ease, transform 180ms ease, box-shadow 180ms ease, outline-color 180ms ease;
+}
+
+.board-shell.slow-motion .pawn {
+  --pawn-transition: 546ms;
 }
 
 .pawn.active-owner {
   outline: 3px solid rgba(255, 255, 255, 0.86);
+}
+
+
+.hole.preview {
+  background: rgba(255, 244, 191, 0.92);
+  border-color: #143d2b;
+  animation: preview-path-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes preview-path-pulse {
+  0%, 100% {
+    background: rgba(255, 244, 191, 0.5);
+    border-color: rgba(20, 61, 43, 0.55);
+  }
+  50% {
+    background: #ffe36f;
+    border-color: #143d2b;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .pawn.selectable:hover {
+    transform: translate(-50%, -50%) scale(1.1);
+    box-shadow: 0 0 0 4px rgba(20, 61, 43, 0.3), 0 5px 12px rgba(33, 27, 19, 0.3);
+    z-index: 5;
+  }
 }
 
 .pawn.selectable {
@@ -420,6 +466,12 @@ label {
   z-index: 7;
 }
 
+.pawn.preview-capture {
+  outline: 4px solid #fff4bf;
+  box-shadow: 0 0 0 5px rgba(255, 244, 191, 0.46), 0 2px 5px rgba(33, 27, 19, 0.34);
+  z-index: 6;
+}
+
 .seat-label {
   position: absolute;
   max-width: 22%;
@@ -430,6 +482,13 @@ label {
   font-size: clamp(0.62rem, 2.2vw, 0.78rem);
   font-weight: 900;
   color: #143d2b;
+}
+
+.seat-label.active {
+  color: #0d5a37;
+  text-decoration: underline;
+  text-decoration-thickness: 3px;
+  text-underline-offset: 4px;
 }
 
 .seat-label.a1 {
@@ -515,6 +574,67 @@ label {
   color: #26352b;
   font-size: 0.82rem;
   line-height: 1.25;
+}
+
+.replay-banner.turn-notice {
+  grid-template-columns: 1fr;
+}
+
+
+
+.endgame-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.74);
+  backdrop-filter: blur(3px);
+}
+
+.endgame-splash {
+  font-size: clamp(4.5rem, 22.4vw, 11.2rem);
+  font-weight: 950;
+  line-height: 0.95;
+  text-align: center;
+  text-transform: uppercase;
+  -webkit-text-stroke: 2px #fffaf2;
+  text-shadow: 0 0 2px #fffaf2;
+}
+
+.endgame-splash.win,
+.endgame-dialog.win strong {
+  color: #143d2b;
+}
+
+.endgame-splash.lose,
+.endgame-dialog.lose strong {
+  color: #b32822;
+}
+
+.endgame-dialog {
+  width: min(86vw, 360px);
+  display: grid;
+  gap: 20px;
+  justify-items: center;
+}
+
+.endgame-dialog strong {
+  font-size: clamp(2.8rem, 14vw, 7rem);
+  line-height: 0.95;
+  text-align: center;
+  text-transform: uppercase;
+  -webkit-text-stroke: 2px #fffaf2;
+  text-shadow: 0 0 2px #fffaf2;
+}
+
+.endgame-dialog button {
+  width: 100%;
+}
+
+.endgame-dialog.lose button {
+  background: #b32822;
 }
 
 .focus-overlay {
@@ -794,9 +914,102 @@ label {
   z-index: 20;
   padding: 12px 14px;
   border-radius: 8px;
-  background: #742d2a;
+  background: #b32822;
   color: #fff;
   box-shadow: 0 12px 34px rgba(33, 27, 19, 0.24);
+}
+
+
+@media (max-width: 759px) {
+  html,
+  body,
+  #app {
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  .home,
+  .lobby {
+    height: 100dvh;
+    min-height: 100dvh;
+    overflow: hidden;
+  }
+
+  .lobby {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    gap: 10px;
+  }
+
+  .lobby .topbar {
+    margin-bottom: 0;
+  }
+
+  .lobby .seat-grid {
+    min-height: 0;
+    align-content: center;
+    gap: 10px;
+  }
+
+  .lobby .seat-card {
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .lobby .lobby-actions {
+    margin-top: 0;
+  }
+
+  .game {
+    max-width: 100vw;
+    overflow-x: hidden;
+  }
+
+  .game-status,
+  .table-area,
+  .hand-tray,
+  .play-bar {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .game-status {
+    width: 100vw;
+    max-width: none;
+  }
+
+  .cards {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: visible;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-inline: contain;
+  }
+
+  .actions {
+    flex-wrap: wrap;
+    overflow-x: hidden;
+    overflow-y: visible;
+  }
+
+  .selection-panel,
+  .choice-group,
+  .seven-builder {
+    min-width: 0;
+    overflow-x: hidden;
+  }
+
+  .choice-group {
+    max-height: 190px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .seven-builder {
+    max-height: 250px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
 }
 
 @media (min-width: 760px) {

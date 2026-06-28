@@ -22,6 +22,13 @@ export interface CardInfo {
   asset: string;
 }
 
+export interface PlayerInfo {
+  id: Seat;
+  index: number;
+  team: "A" | "B";
+  color: string;
+}
+
 export interface PawnInfo {
   id: string;
   owner: Seat;
@@ -81,6 +88,7 @@ export interface GamePayload {
   roundStarter: Seat;
   playCurrent: Seat;
   activePlayer: Seat | null;
+  players: PlayerInfo[];
   winner: "A" | "B" | null;
   pawns: PawnInfo[];
   hands: Record<Seat, { count: number; cards: CardInfo[] | null }>;

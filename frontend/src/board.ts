@@ -1,5 +1,7 @@
 import type { PawnInfo, Seat } from "./types";
 
+export type PreviewPosition = { kind: "TRACK" | "SAFE"; index: number; owner?: Seat };
+
 const entryIndex: Record<Seat, number> = { A1: 0, B1: 16, A2: 32, B2: 48 };
 const seatColors: Record<Seat, string> = {
   A1: "#d9443f",
@@ -66,6 +68,10 @@ const MAIN_PATH_POSITIONS = Array.from({ length: 64 }, (_, index) =>
   rotateAroundCenter(quadrantTemplate[index % 16], Math.floor(index / 16)),
 );
 
+export function getEntryIndex(seat: Seat) {
+  return entryIndex[seat];
+}
+
 function mainPathPoint(index: number) {
   return MAIN_PATH_POSITIONS[((index % MAIN_PATH_POSITIONS.length) + MAIN_PATH_POSITIONS.length) % MAIN_PATH_POSITIONS.length];
 }
@@ -106,6 +112,10 @@ function pawnPoint(pawn: PawnInfo) {
   return basePoint(pawn.owner, pawn.number);
 }
 
+function previewPositionKey(position: PreviewPosition) {
+  return position.kind === "TRACK" ? `T:${position.index}` : `S:${position.owner}:${position.index}`;
+}
+
 function escapeHtml(value: string) {
   const element = document.createElement("span");
   element.textContent = value;
@@ -119,19 +129,25 @@ export function renderBoard(
   selectedPawnIds: string[] = [],
   selectablePawnIds: string[] = [],
   replayPawnIds: string[] = [],
+  previewPositions: PreviewPosition[] = [],
+  previewCapturePawnIds: string[] = [],
+  slowMotion = false,
 ) {
+  const previewKeys = new Set(previewPositions.map((position) => previewPositionKey(position)));
   const track = Array.from({ length: 64 }, (_, index) => {
     const point = mainPathPoint(index);
     const owner = (Object.keys(entryIndex) as Seat[]).find((seat) => entryIndex[seat] === index);
+    const previewClass = previewKeys.has(previewPositionKey({ kind: "TRACK", index })) ? " preview" : "";
     const style = `left:${point.x}%;top:${point.y}%;${owner ? `--seat-color:${seatColors[owner]}` : ""}`;
-    return `<span class="hole ${owner ? "entry" : ""}" style="${style}"></span>`;
+    return `<span class="hole ${owner ? "entry" : ""}${previewClass}" style="${style}"></span>`;
   }).join("");
 
   const safe = (Object.keys(entryIndex) as Seat[])
     .flatMap((seat) =>
       Array.from({ length: 4 }, (_, index) => {
         const point = safePoint(seat, index);
-        return `<span class="hole safe" style="left:${point.x}%;top:${point.y}%;--seat-color:${seatColors[seat]}"></span>`;
+        const previewClass = previewKeys.has(previewPositionKey({ kind: "SAFE", owner: seat, index })) ? " preview" : "";
+        return `<span class="hole safe${previewClass}" style="left:${point.x}%;top:${point.y}%;--seat-color:${seatColors[seat]}"></span>`;
       }),
     )
     .join("");
@@ -148,6 +164,7 @@ export function renderBoard(
   const selected = new Set(selectedPawnIds);
   const selectable = new Set(selectablePawnIds);
   const replayed = new Set(replayPawnIds);
+  const previewCaptured = new Set(previewCapturePawnIds);
   const pawnHtml = pawns
     .map((pawn) => {
       const point = pawnPoint(pawn);
@@ -155,21 +172,22 @@ export function renderBoard(
       const selectedClass = selected.has(pawn.id) ? " selected" : "";
       const selectableClass = selectable.has(pawn.id) ? " selectable" : "";
       const replayClass = replayed.has(pawn.id) ? " replayed" : "";
-      return `<button type="button" class="pawn${active}${selectedClass}${selectableClass}${replayClass}" data-pawn-id="${pawn.id}" style="left:${point.x}%;top:${point.y}%;--pawn-color:${pawn.color}">${pawn.number + 1}</button>`;
+      const previewCapturedClass = previewCaptured.has(pawn.id) ? " preview-capture" : "";
+      return `<button type="button" class="pawn${active}${selectedClass}${selectableClass}${replayClass}${previewCapturedClass}" data-pawn-id="${pawn.id}" style="left:${point.x}%;top:${point.y}%;--pawn-color:${pawn.color}">${pawn.number + 1}</button>`;
     })
     .join("");
 
   const labelFor = (seat: Seat) => escapeHtml(seatLabels[seat] || seat);
 
   return `
-    <div class="board-shell">
+    <div class="board-shell ${activePlayer ? `active-${activePlayer.toLowerCase()}` : ""} ${slowMotion ? "slow-motion" : ""}">
       <div class="board-octagon"></div>
       <div class="board-center">Brandi<br/>Dog</div>
       ${track}${safe}${bases}${pawnHtml}
-      <span class="seat-label a1">${labelFor("A1")}</span>
-      <span class="seat-label b1">${labelFor("B1")}</span>
-      <span class="seat-label a2">${labelFor("A2")}</span>
-      <span class="seat-label b2">${labelFor("B2")}</span>
+      <span class="seat-label a1 ${activePlayer === "A1" ? "active" : ""}">${labelFor("A1")}</span>
+      <span class="seat-label b1 ${activePlayer === "B1" ? "active" : ""}">${labelFor("B1")}</span>
+      <span class="seat-label a2 ${activePlayer === "A2" ? "active" : ""}">${labelFor("A2")}</span>
+      <span class="seat-label b2 ${activePlayer === "B2" ? "active" : ""}">${labelFor("B2")}</span>
     </div>
   `;
 }

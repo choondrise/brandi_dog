@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import secrets
 import string
 from dataclasses import dataclass, field
@@ -21,6 +22,7 @@ from .serialization import action_key, active_player, describe_action, serialize
 
 
 SEAT_ORDER = (PlayerId.A1, PlayerId.B1, PlayerId.A2, PlayerId.B2)
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -277,8 +279,10 @@ class SessionManager:
             if actor is None:
                 break
             legal = session.engine.legal_actions(session.state)
+            if not legal:
+                break
             if actor in session.bot_agents:
-                action = session.bot_agents[actor].select_action(session.engine, session.state)
+                action = self._select_bot_action_locked(session, actor, legal)
             elif len(legal) == 1 and isinstance(legal[0], SkipTurnAction):
                 action = legal[0]
             else:
@@ -290,6 +294,20 @@ class SessionManager:
         if session.state.round_stage == RoundStage.GAME_OVER:
             session.phase = "FINISHED"
         return False
+
+    def _select_bot_action_locked(self, session: GameSession, actor: PlayerId, legal):
+        assert session.engine is not None
+        assert session.state is not None
+        legal_by_key = {action_key(action): action for action in legal}
+        try:
+            selected = session.bot_agents[actor].select_action(session.engine, session.state)
+            selected_key = action_key(selected)
+            if selected_key not in legal_by_key:
+                raise ValueError(f"Bot {actor.name} selected an illegal action: {selected_key}")
+            return legal_by_key[selected_key]
+        except Exception:
+            logger.exception("Bot %s failed to select a legal action; falling back to a random legal action", actor.name)
+            return legal[secrets.randbelow(len(legal))]
 
     def _apply_action_locked(self, session: GameSession, action, events: Optional[list[dict[str, Any]]] = None) -> bool:
         assert session.engine is not None
@@ -352,6 +370,7 @@ class SessionManager:
             "type": type(action).__name__,
             "label": describe_action(action, session.engine.cards_by_id),
             "card": card,
+            "action": serialize_action(0, action, session.engine.cards_by_id),
             "affectedPawns": affected,
             "pawnsBefore": before_pawns,
             "pawnsAfter": after_pawns,

@@ -1,6 +1,7 @@
 import type { PawnInfo, Seat } from "./types";
 
 export type PreviewPosition = { kind: "TRACK" | "SAFE"; index: number; owner?: Seat };
+export type ReplayAnimationPawn = { id: string; from: PawnInfo; to: PawnInfo };
 
 const entryIndex: Record<Seat, number> = { A1: 0, B1: 16, A2: 32, B2: 48 };
 const seatColors: Record<Seat, string> = {
@@ -169,6 +170,8 @@ export function renderBoard(
   previewPositions: PreviewPosition[] = [],
   previewCapturePawnIds: string[] = [],
   slowMotion = false,
+  replayAnimations: ReplayAnimationPawn[] = [],
+  replayAnimationDurationMs: number | null = null,
 ) {
   const previewKeys = new Set(previewPositions.map((position) => previewPositionKey(position)));
   const track = Array.from({ length: 64 }, (_, index) => {
@@ -202,6 +205,7 @@ export function renderBoard(
   const selectable = new Set(selectablePawnIds);
   const replayed = new Set(replayPawnIds);
   const previewCaptured = new Set(previewCapturePawnIds);
+  const endpointAnimated = new Set(replayAnimations.map((item) => item.id));
   const pawnHtml = pawns
     .map((pawn) => {
       const point = pawnPoint(pawn);
@@ -210,18 +214,35 @@ export function renderBoard(
       const selectableClass = selectable.has(pawn.id) ? " selectable" : "";
       const replayClass = replayed.has(pawn.id) ? " replayed" : "";
       const previewCapturedClass = previewCaptured.has(pawn.id) ? " preview-capture" : "";
-      return `<button type="button" class="pawn${active}${selectedClass}${selectableClass}${replayClass}${previewCapturedClass}" data-pawn-id="${pawn.id}" style="left:${point.x}%;top:${point.y}%;--pawn-color:${pawn.color}">${pawn.number + 1}</button>`;
+      const endpointClass = endpointAnimated.has(pawn.id) ? " endpoint-hidden" : "";
+      return `<button type="button" class="pawn${active}${selectedClass}${selectableClass}${replayClass}${previewCapturedClass}${endpointClass}" data-pawn-id="${pawn.id}" style="left:${point.x}%;top:${point.y}%;--pawn-color:${pawn.color}">${pawn.number + 1}</button>`;
+    })
+    .join("");
+
+  const replayEndpointHtml = replayAnimations
+    .filter((item) => item.from.position.kind !== item.to.position.kind || item.from.position.index !== item.to.position.index)
+    .flatMap((item) => {
+      const fromPoint = pawnPoint(item.from);
+      const toPoint = pawnPoint(item.to);
+      const number = item.from.number + 1;
+      const styleBase = `--pawn-color:${item.from.color}`;
+      return [
+        `<span class="pawn replay-endpoint replay-endpoint-source" style="left:${fromPoint.x}%;top:${fromPoint.y}%;${styleBase}">${number}</span>`,
+        `<span class="pawn replay-endpoint replay-endpoint-target" style="left:${toPoint.x}%;top:${toPoint.y}%;${styleBase}">${number}</span>`,
+      ];
     })
     .join("");
 
   const labelFor = (seat: Seat) => escapeHtml(seatLabels[seat] || seat);
 
+  const animationStyle = replayAnimationDurationMs === null ? "" : ` style="--replay-endpoint-duration:${replayAnimationDurationMs}ms"`;
+
   return `
-    <div class="board-shell ${activePlayer ? `active-${activePlayer.toLowerCase()}` : ""} ${slowMotion ? "slow-motion" : ""}">
+    <div class="board-shell ${activePlayer ? `active-${activePlayer.toLowerCase()}` : ""} ${slowMotion ? "slow-motion" : ""}"${animationStyle}>
       <div class="board-octagon"></div>
       ${activeEdgeSvg(activePlayer)}
       <div class="board-center">Brandi<br/>Dog</div>
-      ${track}${safe}${bases}${pawnHtml}
+      ${track}${safe}${bases}${pawnHtml}${replayEndpointHtml}
       <span class="seat-label a1 ${activePlayer === "A1" ? "active" : ""}">${labelFor("A1")}</span>
       <span class="seat-label b1 ${activePlayer === "B1" ? "active" : ""}">${labelFor("B1")}</span>
       <span class="seat-label a2 ${activePlayer === "A2" ? "active" : ""}">${labelFor("A2")}</span>

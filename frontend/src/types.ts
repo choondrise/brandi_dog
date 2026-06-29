@@ -1,5 +1,5 @@
 export type Seat = "A1" | "B1" | "A2" | "B2";
-export type BotLevel = "Idiot" | "Easy" | "Hard" | "Cheater";
+export type BotLevel = "Idiot" | "Easy" | "Medium" | "Hard" | "Cheater";
 
 export interface SeatInfo {
   seat: Seat;
@@ -86,6 +86,7 @@ export interface TurnEvent {
   affectedPawns: string[];
   pawnsBefore: PawnInfo[];
   pawnsAfter: PawnInfo[];
+  action?: ActionInfo;
 }
 
 export interface GamePayload {

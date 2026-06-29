@@ -623,6 +623,13 @@ label {
   animation: preview-path-pulse 1.8s ease-in-out infinite;
 }
 
+.hole.preview.replay-path-step {
+  background: rgba(255, 244, 191, 0);
+  border-color: rgba(20, 61, 43, 0.12);
+  animation: replay-path-step-in var(--replay-path-step-duration, 340ms) ease-out both;
+  animation-delay: var(--preview-delay, 0ms);
+}
+
 @keyframes preview-path-pulse {
   0%, 100% {
     background: rgba(255, 244, 191, 0.5);
@@ -630,6 +637,21 @@ label {
   }
   50% {
     background: #ffe36f;
+    border-color: #143d2b;
+  }
+}
+
+@keyframes replay-path-step-in {
+  0% {
+    background: rgba(255, 244, 191, 0);
+    border-color: rgba(20, 61, 43, 0.12);
+  }
+  58% {
+    background: #ffe36f;
+    border-color: #143d2b;
+  }
+  100% {
+    background: rgba(255, 244, 191, 0.92);
     border-color: #143d2b;
   }
 }
@@ -657,6 +679,23 @@ label {
   transform: translate(-50%, -50%) scale(1.2);
   box-shadow: 0 0 0 6.65px color-mix(in srgb, var(--pawn-color) 30%, transparent), 0 6px 16px rgba(33, 27, 19, 0.34);
   z-index: 7;
+}
+
+.board-shell.replay-settling .pawn.replayed {
+  animation: replay-pawn-settle-out var(--replay-settle-duration, 900ms) ease-in-out both;
+}
+
+@keyframes replay-pawn-settle-out {
+  from {
+    outline-color: color-mix(in srgb, var(--pawn-color) 62%, #ffffff);
+    transform: translate(-50%, -50%) scale(1.2);
+    box-shadow: 0 0 0 6.65px color-mix(in srgb, var(--pawn-color) 30%, transparent), 0 6px 16px rgba(33, 27, 19, 0.34);
+  }
+  to {
+    outline-color: transparent;
+    transform: translate(-50%, -50%) scale(1);
+    box-shadow: 0 2px 5px rgba(33, 27, 19, 0.34);
+  }
 }
 
 .pawn.endpoint-hidden {

@@ -24,6 +24,8 @@ let replayPawns: PawnInfo[] | null = null;
 let replayBaseGame: GamePayload | null = null;
 let currentReplayEvent: TurnEvent | null = null;
 let replayEndpointEventId: string | null = null;
+let replayPathEventId: string | null = null;
+let replaySettleEventId: string | null = null;
 let seenEventIds = new Set<string>();
 let currentView: "home" | "rules" | "tutorial" = "home";
 type FocusOverlay =
@@ -81,6 +83,8 @@ function clearIdentity() {
   replayBaseGame = null;
   currentReplayEvent = null;
   replayEndpointEventId = null;
+  replayPathEventId = null;
+  replaySettleEventId = null;
   replayHandCards = null;
   optimisticHandCards = null;
   endGameOverlay = null;
@@ -545,22 +549,28 @@ async function replayEvents(events: TurnEvent[], overlays: FocusOverlay[] = []) 
   for (const event of events) {
     currentReplayEvent = event;
     replayEndpointEventId = null;
+    replaySettleEventId = null;
+    replayPathEventId = isReplayPathEvent(event) ? event.id : null;
     replayPawns = event.pawnsBefore;
     render();
     await delay(replayAnticipationDelay(event));
 
+    replayPathEventId = null;
     replayEndpointEventId = isReplayMovementEvent(event) ? event.id : null;
     replayPawns = event.pawnsAfter;
     render();
     await delay(replayMoveAnimationDelay(event));
 
     replayEndpointEventId = null;
+    replaySettleEventId = isReplayMovementEvent(event) ? event.id : null;
     replayPawns = event.pawnsAfter;
     render();
     await delay(replaySettleDelay(event));
   }
   currentReplayEvent = null;
   replayEndpointEventId = null;
+  replayPathEventId = null;
+  replaySettleEventId = null;
   replayPawns = null;
   replayBaseGame = null;
   replayInProgress = false;
@@ -729,11 +739,14 @@ function renderGame() {
   const actionOptions = selectionOptions(game);
   const customSevenReady = customSevenActionReady(game);
   const selectablePawnIds = selectablePawns(game);
-  const preview = pathPreview(game, finalAction);
+  const preview = replayInProgress ? replayPathPreview() : pathPreview(game, finalAction);
+  const previewMode = replayPathEventId ? "sequence" : "steady";
+  const replayPathTiming = replayPathEventId && currentReplayEvent ? replayPathTimingForEvent(currentReplayEvent) : null;
   const boardActivePlayer = currentReplayEvent?.actor || game.activePlayer;
   const slowMotion = isReplayMovementEvent(currentReplayEvent);
   const replayEndpointAnimations = replayEndpointEventId && currentReplayEvent ? replayAnimationsForEvent(currentReplayEvent) : [];
   const replayEndpointDuration = replayEndpointEventId && currentReplayEvent ? replayMoveAnimationDelay(currentReplayEvent) : null;
+  const replaySettleDuration = replaySettleEventId && currentReplayEvent ? replaySettleDelay(currentReplayEvent) : null;
   const canPlay = Boolean(finalAction || playableNoCardAction || customSevenReady);
   app.innerHTML = `
     <main class="game">
@@ -749,7 +762,7 @@ function renderGame() {
       <section class="table-area">
         ${renderReplayBanner()}
         ${renderTurnNotice(game)}
-        ${renderBoard(displayedPawns, boardActivePlayer, boardSeatLabels(), boardSelectedPawnIds(game), replayInProgress ? [] : selectablePawnIds, currentReplayEvent?.affectedPawns || [], preview.positions, preview.capturePawnIds, slowMotion, replayEndpointAnimations, replayEndpointDuration)}
+        ${renderBoard(displayedPawns, boardActivePlayer, boardSeatLabels(), boardSelectedPawnIds(game), replayInProgress ? [] : selectablePawnIds, currentReplayEvent?.affectedPawns || [], preview.positions, preview.capturePawnIds, slowMotion, replayEndpointAnimations, replayEndpointDuration, previewMode, replaySettleDuration, replayPathTiming)}
       </section>
       <section class="hand-tray">
         <div class="hand-header">
@@ -1011,10 +1024,25 @@ function selectablePawns(game: GamePayload) {
 }
 
 function pathPreview(game: GamePayload, finalAction: ActionInfo | null): PathPreview {
-  if (replayInProgress) return emptyPreview();
   if (isCustomSevenMode(game)) return customSevenPreview(game);
   const action = finalAction || singleSelectedPawnPreviewAction(game);
   return action?.preview?.valid ? action.preview : emptyPreview();
+}
+
+
+function replayPathPreview(): PathPreview {
+  if (!currentReplayEvent || replayPathEventId !== currentReplayEvent.id || !isReplayPathEvent(currentReplayEvent)) return emptyPreview();
+  const preview = currentReplayEvent.action?.preview;
+  return preview?.valid ? preview : emptyPreview();
+}
+
+function replayPathTimingForEvent(event: TurnEvent) {
+  const count = event.action?.preview?.positions.length || 0;
+  if (count <= 1) return { stepDelayMs: 0, stepDurationMs: 300 };
+  const available = Math.max(420, replayAnticipationDelay(event) - 360);
+  const stepDelayMs = Math.round(available / (count - 1));
+  const stepDurationMs = Math.round(Math.min(360, Math.max(160, stepDelayMs * 0.85)));
+  return { stepDelayMs, stepDurationMs };
 }
 
 function emptyPreview(): PathPreview {
@@ -1120,6 +1148,15 @@ function replayAnimationsForEvent(event: TurnEvent): ReplayAnimationPawn[] {
 
 function isReplayMovementEvent(event: TurnEvent | null) {
   return Boolean(event && event.type !== "DiscardHandAction" && event.type !== "SkipTurnAction" && event.affectedPawns.length > 0);
+}
+
+function isReplayPathEvent(event: TurnEvent | null) {
+  return Boolean(
+    event &&
+      (event.type === "PlayStepCardAction" || event.type === "PlaySevenSplitAction") &&
+      event.action?.preview?.valid &&
+      event.action.preview.positions.length > 0,
+  );
 }
 
 function renderSelectionControls(game: GamePayload, options: ReturnType<typeof selectionOptions>) {

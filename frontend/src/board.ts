@@ -172,13 +172,20 @@ export function renderBoard(
   slowMotion = false,
   replayAnimations: ReplayAnimationPawn[] = [],
   replayAnimationDurationMs: number | null = null,
+  previewMode: "steady" | "sequence" = "steady",
+  replaySettleDurationMs: number | null = null,
+  replayPathTiming: { stepDelayMs: number; stepDurationMs: number } | null = null,
 ) {
   const previewKeys = new Set(previewPositions.map((position) => previewPositionKey(position)));
+  const previewOrder = new Map(previewPositions.map((position, index) => [previewPositionKey(position), index]));
   const track = Array.from({ length: 64 }, (_, index) => {
     const point = mainPathPoint(index);
     const owner = (Object.keys(entryIndex) as Seat[]).find((seat) => entryIndex[seat] === index);
-    const previewClass = previewKeys.has(previewPositionKey({ kind: "TRACK", index })) ? " preview" : "";
-    const style = `left:${point.x}%;top:${point.y}%;${owner ? `--seat-color:${seatColors[owner]}` : ""}`;
+    const key = previewPositionKey({ kind: "TRACK", index });
+    const previewIndex = previewOrder.get(key);
+    const previewClass = previewKeys.has(key) ? ` preview${previewMode === "sequence" ? " replay-path-step" : ""}` : "";
+    const previewDelay = previewIndex !== undefined && replayPathTiming ? `--preview-delay:${previewIndex * replayPathTiming.stepDelayMs}ms;` : "";
+    const style = `left:${point.x}%;top:${point.y}%;${owner ? `--seat-color:${seatColors[owner]};` : ""}${previewIndex !== undefined ? `--preview-step:${previewIndex};` : ""}${previewDelay}`;
     return `<span class="hole ${owner ? "entry" : ""}${previewClass}" style="${style}"></span>`;
   }).join("");
 
@@ -186,8 +193,12 @@ export function renderBoard(
     .flatMap((seat) =>
       Array.from({ length: 4 }, (_, index) => {
         const point = safePoint(seat, index);
-        const previewClass = previewKeys.has(previewPositionKey({ kind: "SAFE", owner: seat, index })) ? " preview" : "";
-        return `<span class="hole safe${previewClass}" style="left:${point.x}%;top:${point.y}%;--seat-color:${seatColors[seat]}"></span>`;
+        const key = previewPositionKey({ kind: "SAFE", owner: seat, index });
+        const previewIndex = previewOrder.get(key);
+        const previewClass = previewKeys.has(key) ? ` preview${previewMode === "sequence" ? " replay-path-step" : ""}` : "";
+        const previewStepStyle = previewIndex !== undefined ? `;--preview-step:${previewIndex}` : "";
+        const previewDelayStyle = previewIndex !== undefined && replayPathTiming ? `;--preview-delay:${previewIndex * replayPathTiming.stepDelayMs}ms` : "";
+        return `<span class="hole safe${previewClass}" style="left:${point.x}%;top:${point.y}%;--seat-color:${seatColors[seat]}${previewStepStyle}${previewDelayStyle}"></span>`;
       }),
     )
     .join("");
@@ -235,10 +246,17 @@ export function renderBoard(
 
   const labelFor = (seat: Seat) => escapeHtml(seatLabels[seat] || seat);
 
-  const animationStyle = replayAnimationDurationMs === null ? "" : ` style="--replay-endpoint-duration:${replayAnimationDurationMs}ms"`;
+  const animationVars = [
+    replayAnimationDurationMs === null ? "" : `--replay-endpoint-duration:${replayAnimationDurationMs}ms`,
+    replaySettleDurationMs === null ? "" : `--replay-settle-duration:${replaySettleDurationMs}ms`,
+    replayPathTiming === null ? "" : `--replay-path-step-delay:${replayPathTiming.stepDelayMs}ms`,
+    replayPathTiming === null ? "" : `--replay-path-step-duration:${replayPathTiming.stepDurationMs}ms`,
+  ].filter(Boolean).join(";");
+  const animationStyle = animationVars ? ` style="${animationVars}"` : "";
+  const replaySettleClass = replaySettleDurationMs === null ? "" : " replay-settling";
 
   return `
-    <div class="board-shell ${activePlayer ? `active-${activePlayer.toLowerCase()}` : ""} ${slowMotion ? "slow-motion" : ""}"${animationStyle}>
+    <div class="board-shell ${activePlayer ? `active-${activePlayer.toLowerCase()}` : ""} ${slowMotion ? "slow-motion" : ""}${replaySettleClass}"${animationStyle}>
       <div class="board-octagon"></div>
       ${activeEdgeSvg(activePlayer)}
       <div class="board-center">Brandi<br/>Dog</div>

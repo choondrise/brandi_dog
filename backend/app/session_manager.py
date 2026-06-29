@@ -318,7 +318,7 @@ class SessionManager:
         completed_swap = isinstance(action, SwapCardAction) and session.state.hands != before_state.hands
         if events is not None and not isinstance(action, SwapCardAction):
             after_pawns = serialize_pawns(session.state)
-            events.append(self._turn_event(session, action, before_pawns, after_pawns))
+            events.append(self._turn_event(session, action, before_state, before_pawns, after_pawns))
         return completed_swap
 
     def _schedule_automatic_after_swap_overlay(self, session: GameSession) -> None:
@@ -338,17 +338,18 @@ class SessionManager:
     def _apply_custom_seven_locked(self, session: GameSession, action: PlaySevenSplitAction, events: list[dict[str, Any]]) -> None:
         assert session.engine is not None
         assert session.state is not None
-        before_pawns = serialize_pawns(session.state)
+        before_state = session.state
+        before_pawns = serialize_pawns(before_state)
         try:
             session.state = engine_rules._apply_play_seven_action(session.state, action, session.engine.cards_by_id)
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         after_pawns = serialize_pawns(session.state)
-        events.append(self._turn_event(session, action, before_pawns, after_pawns))
+        events.append(self._turn_event(session, action, before_state, before_pawns, after_pawns))
         if session.state.round_stage == RoundStage.GAME_OVER:
             session.phase = "FINISHED"
 
-    def _turn_event(self, session: GameSession, action, before_pawns: list[dict[str, Any]], after_pawns: list[dict[str, Any]]) -> dict[str, Any]:
+    def _turn_event(self, session: GameSession, action, before_state: GameState, before_pawns: list[dict[str, Any]], after_pawns: list[dict[str, Any]]) -> dict[str, Any]:
         assert session.engine is not None
         actor = getattr(action, "player", None)
         actor_name = self._display_name(session, actor) if actor is not None else "Game"
@@ -361,7 +362,7 @@ class SessionManager:
         card_id = getattr(action, "card_id", None)
         card = None
         if card_id is not None:
-            card = serialize_action(0, action, session.engine.cards_by_id).get("card")
+            card = serialize_action(0, action, session.engine.cards_by_id, before_state).get("card")
         return {
             "id": secrets.token_hex(6),
             "actor": None if actor is None else actor.name,
@@ -370,7 +371,7 @@ class SessionManager:
             "type": type(action).__name__,
             "label": describe_action(action, session.engine.cards_by_id),
             "card": card,
-            "action": serialize_action(0, action, session.engine.cards_by_id),
+            "action": serialize_action(0, action, session.engine.cards_by_id, before_state),
             "affectedPawns": affected,
             "pawnsBefore": before_pawns,
             "pawnsAfter": after_pawns,

@@ -115,14 +115,14 @@ function pawnPoint(pawn: PawnInfo) {
 function activeEdgeSvg(activePlayer: Seat | null) {
   if (!activePlayer) return "";
   const edges: Record<Seat, { full: string; half: string }> = {
-    A1: { full: "15,15 50,0 85,15", half: activeHalfEdgePoints({ x: 15, y: 15 }, { x: 50, y: 0 }, { x: 85, y: 15 }) },
-    B1: { full: "85,15 100,50 85,85", half: activeHalfEdgePoints({ x: 85, y: 15 }, { x: 100, y: 50 }, { x: 85, y: 85 }) },
-    A2: { full: "85,85 50,100 15,85", half: activeHalfEdgePoints({ x: 85, y: 85 }, { x: 50, y: 100 }, { x: 15, y: 85 }) },
-    B2: { full: "15,85 0,50 15,15", half: activeHalfEdgePoints({ x: 15, y: 85 }, { x: 0, y: 50 }, { x: 15, y: 15 }) },
+    A1: { full: "17.8,17.8 50,4 82.2,17.8", half: activeHalfEdgePoints({ x: 17.8, y: 17.8 }, { x: 50, y: 4 }, { x: 82.2, y: 17.8 }) },
+    B1: { full: "82.2,17.8 96,50 82.2,82.2", half: activeHalfEdgePoints({ x: 82.2, y: 17.8 }, { x: 96, y: 50 }, { x: 82.2, y: 82.2 }) },
+    A2: { full: "82.2,82.2 50,96 17.8,82.2", half: activeHalfEdgePoints({ x: 82.2, y: 82.2 }, { x: 50, y: 96 }, { x: 17.8, y: 82.2 }) },
+    B2: { full: "17.8,82.2 4,50 17.8,17.8", half: activeHalfEdgePoints({ x: 17.8, y: 82.2 }, { x: 4, y: 50 }, { x: 17.8, y: 17.8 }) },
   };
   const edge = edges[activePlayer];
   return `
-    <svg class="board-active-edges" viewBox="0 0 100 100" aria-hidden="true" style="--active-seat-color:${seatColors[activePlayer]}">
+    <svg class="board-active-edges" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" style="--active-seat-color:${seatColors[activePlayer]}">
       <polyline class="active-edge-main" points="${edge.full}" />
       <polyline class="active-edge-secondary" points="${edge.half}" />
     </svg>

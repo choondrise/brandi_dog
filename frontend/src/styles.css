@@ -356,7 +356,7 @@ label {
 
 .board-active-edges {
   position: absolute;
-  inset: 4%;
+  inset: 0;
   z-index: 1;
   overflow: visible;
   pointer-events: none;

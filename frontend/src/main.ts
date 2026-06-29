@@ -4,6 +4,7 @@ import { inject } from "@vercel/analytics";
 import { API_BASE, WS_BASE, createSession, getState, joinSession, playAction, playSevenSplit, previewSevenSplit, setBot, setSeat, startGame } from "./api";
 import { renderBoard, type PreviewPosition, type ReplayAnimationPawn } from "./board";
 import { renderTutorial, resetTutorial } from "./tutorial";
+import { playSound, soundEnabled, toggleSound } from "./sounds";
 import type { ActionInfo, ActionPreview, AppPayload, BotLevel, CardInfo, GamePayload, PawnInfo, Seat, TurnEvent } from "./types";
 
 inject({ framework: "vite" });
@@ -316,7 +317,10 @@ function renderLobby() {
           <span class="eyebrow">Game ID</span>
           <button class="game-code" id="copy-code">${session.game_id}</button>
         </div>
-        <button class="ghost" id="leave">Leave</button>
+        <div class="header-actions">
+          ${renderSoundToggle()}
+          <button class="ghost" id="leave">Leave</button>
+        </div>
       </header>
       <section class="seat-grid">
         ${seats.map((seat) => renderSeatCard(seat)).join("")}
@@ -331,6 +335,7 @@ function renderLobby() {
 }
 
 function bindLobbyEvents() {
+  bindSoundToggle();
   document.querySelector<HTMLElement>("#leave")!.onclick = clearIdentity;
   document.querySelector<HTMLElement>("#copy-code")!.onclick = async () => {
     await navigator.clipboard?.writeText(state!.session.game_id);
@@ -450,6 +455,7 @@ async function acceptPayload(payload: AppPayload, replay = false) {
   const previousPayload = state;
   const previousGame = state?.game || null;
   const overlays = payload.game ? focusOverlaysForPayload(previousGame, payload) : [];
+  const shouldPlayDealSound = payload.game ? cardDealSoundForPayload(previousGame, payload) : false;
   const events = (payload.events || []).filter((event) => !seenEventIds.has(event.id));
   for (const event of events) seenEventIds.add(event.id);
   replayHandCards = replay && events.length && payload.game ? replayHandForPayload(previousGame, payload, events) : null;
@@ -460,6 +466,7 @@ async function acceptPayload(payload: AppPayload, replay = false) {
     return;
   }
   if (!replay || !events.length || !payload.game) {
+    if (shouldPlayDealSound && !overlays.some((overlay) => overlay.kind === "deal")) playSound("cardDeal");
     if (overlays.length) await playFocusOverlays(overlays);
     replayHandCards = null;
     optimisticHandCards = null;
@@ -468,8 +475,20 @@ async function acceptPayload(payload: AppPayload, replay = false) {
     return;
   }
   replayBaseGame = previousGame;
-  await replayEvents(events, overlays);
+  await replayEvents(events, overlays, shouldPlayDealSound);
   void maybeStartEndGameFlow(payload);
+}
+
+
+function cardDealSoundForPayload(previousGame: GamePayload | null, payload: AppPayload) {
+  const viewer = payload.viewerSeat;
+  const nextGame = payload.game;
+  if (!viewer || !nextGame || nextGame.phase !== "TEAM_SWAPS") return false;
+  const nextHand = nextGame.hands[viewer].cards || [];
+  if (!nextHand.length) return false;
+  if (!previousGame) return true;
+  if (previousGame.phase !== "TEAM_SWAPS") return true;
+  return previousGame.dealRoundIndex !== nextGame.dealRoundIndex;
 }
 
 function focusOverlaysForPayload(previousGame: GamePayload | null, payload: AppPayload) {
@@ -529,9 +548,11 @@ async function playFocusOverlays(overlays: FocusOverlay[]) {
     activeOverlay = overlay;
     render();
     if (overlay.kind === "deal") {
+      playSound("cardDeal");
       await delay(2000);
       activeOverlay = { ...overlay, rolling: false };
       render();
+      playSound("diceRoll");
       await delay(700);
     } else {
       await delay(2000);
@@ -540,7 +561,7 @@ async function playFocusOverlays(overlays: FocusOverlay[]) {
   activeOverlay = null;
 }
 
-async function replayEvents(events: TurnEvent[], overlays: FocusOverlay[] = []) {
+async function replayEvents(events: TurnEvent[], overlays: FocusOverlay[] = [], playDealSoundAfterReplay = false) {
   replayInProgress = true;
   replayPawns = events[0].pawnsBefore;
   currentReplayEvent = null;
@@ -553,6 +574,7 @@ async function replayEvents(events: TurnEvent[], overlays: FocusOverlay[] = []) 
     replayPathEventId = isReplayPathEvent(event) ? event.id : null;
     replayPawns = event.pawnsBefore;
     render();
+    if (event.card) playSound("playCard");
     await delay(replayAnticipationDelay(event));
 
     replayPathEventId = null;
@@ -560,6 +582,7 @@ async function replayEvents(events: TurnEvent[], overlays: FocusOverlay[] = []) 
     replayPawns = event.pawnsAfter;
     render();
     await delay(replayMoveAnimationDelay(event));
+    if (isReplayMovementEvent(event)) playSound("pawnMove");
 
     replayEndpointEventId = null;
     replaySettleEventId = isReplayMovementEvent(event) ? event.id : null;
@@ -574,6 +597,7 @@ async function replayEvents(events: TurnEvent[], overlays: FocusOverlay[] = []) 
   replayPawns = null;
   replayBaseGame = null;
   replayInProgress = false;
+  if (playDealSoundAfterReplay && !overlays.some((overlay) => overlay.kind === "deal")) playSound("cardDeal");
   if (overlays.length) await playFocusOverlays(overlays);
   replayHandCards = null;
   optimisticHandCards = null;
@@ -670,6 +694,30 @@ function delay(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
+function renderSoundToggle() {
+  const enabled = soundEnabled();
+  return `
+    <button type="button" class="ghost sound-toggle" id="sound-toggle" aria-pressed="${enabled}" aria-label="${enabled ? "Sound on" : "Sound off"}" title="${enabled ? "Sound on" : "Sound off"}">
+      <span class="sound-icon" aria-hidden="true">${enabled ? soundOnIcon() : soundOffIcon()}</span>
+    </button>
+  `;
+}
+
+function bindSoundToggle() {
+  document.querySelector<HTMLButtonElement>("#sound-toggle")?.addEventListener("click", () => {
+    toggleSound();
+    render();
+  });
+}
+
+function soundOnIcon() {
+  return `<svg viewBox="0 0 24 24" focusable="false"><path d="M4 9v6h4l5 4V5L8 9H4Z"></path><path d="M16 8.5c1 .9 1.5 2.1 1.5 3.5s-.5 2.6-1.5 3.5"></path><path d="M18.5 6c1.7 1.6 2.5 3.6 2.5 6s-.8 4.4-2.5 6"></path></svg>`;
+}
+
+function soundOffIcon() {
+  return `<svg viewBox="0 0 24 24" focusable="false"><path d="M4 9v6h4l5 4V5L8 9H4Z"></path><path d="M19 9l-5 5"></path><path d="M14 9l5 5"></path></svg>`;
+}
+
 function renderFocusOverlay() {
   if (!activeOverlay) return "";
   if (activeOverlay.kind === "deal") {
@@ -757,7 +805,10 @@ function renderGame() {
           <strong>${game.winner ? `Team ${game.winner} wins` : game.activePlayer ? `${displaySeatName(game.activePlayer)} to move` : "Game over"}</strong>
           ${game.phase === "TEAM_SWAPS" ? `<p class="round-note">First to play: ${displaySeatName(game.roundStarter)} - ${game.activeDealSize} cards</p>` : ""}
         </div>
-        <button class="ghost exit-button" id="exit-game">Exit</button>
+        <div class="header-actions">
+          ${renderSoundToggle()}
+          <button class="ghost exit-button" id="exit-game">Exit</button>
+        </div>
       </header>
       <section class="table-area">
         ${renderReplayBanner()}
@@ -781,6 +832,7 @@ function renderGame() {
     </main>
   `;
   document.querySelector("#back-lobby")!.addEventListener("click", refresh);
+  bindSoundToggle();
   document.querySelector("#exit-game")!.addEventListener("click", confirmExitGame);
   document.querySelector("#play-again")?.addEventListener("click", playAgain);
   document.querySelector("#clear-selection")!.addEventListener("click", () => {

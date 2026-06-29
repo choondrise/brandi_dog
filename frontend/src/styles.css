@@ -366,6 +366,43 @@ label {
   gap: 12px;
 }
 
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sound-toggle {
+  width: 42px;
+  min-height: 42px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+}
+
+.sound-toggle[aria-pressed="true"] {
+  border-color: rgba(20, 61, 43, 0.48);
+  background: rgba(20, 61, 43, 0.08);
+}
+
+.sound-icon,
+.sound-icon svg {
+  width: 20px;
+  height: 20px;
+  display: block;
+}
+
+.sound-icon svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .topbar,
 .game-status {
   position: sticky;

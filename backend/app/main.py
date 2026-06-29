@@ -14,6 +14,7 @@ from .schemas import (
     JoinSessionRequest,
     SeatRequest,
     SessionCreated,
+    SevenPreviewRequest,
     StartRequest,
 )
 from .session_manager import SessionManager
@@ -90,6 +91,17 @@ async def apply_action(game_id: str, request: ActionRequest):
         request.seven_moves,
     )
     return manager.game_payload(session, request.token, events)
+
+
+@app.post("/api/sessions/{game_id}/preview-seven")
+async def preview_seven(game_id: str, request: SevenPreviewRequest):
+    return await manager.preview_seven(
+        game_id,
+        request.token,
+        request.card_id,
+        request.represented_rank,
+        request.seven_moves,
+    )
 
 
 @app.websocket("/ws/{game_id}")

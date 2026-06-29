@@ -1,9 +1,9 @@
 import "./styles.css";
 import rulesMarkdown from "./rules.md?raw";
 import { inject } from "@vercel/analytics";
-import { API_BASE, WS_BASE, createSession, getState, joinSession, playAction, playSevenSplit, setBot, setSeat, startGame } from "./api";
-import { getEntryIndex, renderBoard, type PreviewPosition } from "./board";
-import type { ActionInfo, AppPayload, BotLevel, CardInfo, GamePayload, PawnInfo, Seat, TurnEvent } from "./types";
+import { API_BASE, WS_BASE, createSession, getState, joinSession, playAction, playSevenSplit, previewSevenSplit, setBot, setSeat, startGame } from "./api";
+import { renderBoard, type PreviewPosition } from "./board";
+import type { ActionInfo, ActionPreview, AppPayload, BotLevel, CardInfo, GamePayload, PawnInfo, Seat, TurnEvent } from "./types";
 
 inject({ framework: "vite" });
 
@@ -34,6 +34,10 @@ type EndGameOverlay = { gameId: string; outcome: "win" | "lose"; phase: "splash"
 let endGameOverlay: EndGameOverlay | null = null;
 let handledEndGameId = "";
 let endGameFlowInProgress = false;
+type PathPreview = Pick<ActionPreview, "positions" | "capturePawnIds" | "valid">;
+const sevenPreviewCache = new Map<string, PathPreview>();
+let pendingSevenPreviewKey = "";
+let sevenPreviewTimer: number | null = null;
 
 function saveIdentity(nextGameId: string, nextToken: string, nextHostToken = "") {
   socket?.close();
@@ -41,6 +45,7 @@ function saveIdentity(nextGameId: string, nextToken: string, nextHostToken = "")
   endGameOverlay = null;
   handledEndGameId = "";
   endGameFlowInProgress = false;
+  resetSevenPreviewCache();
   gameId = nextGameId.toUpperCase();
   token = nextToken;
   hostToken = nextHostToken;
@@ -78,6 +83,7 @@ function clearIdentity() {
   endGameOverlay = null;
   handledEndGameId = "";
   endGameFlowInProgress = false;
+  resetSevenPreviewCache();
   seenEventIds = new Set<string>();
   render();
 }
@@ -462,7 +468,7 @@ async function maybeStartEndGameFlow(payload: AppPayload) {
   endGameFlowInProgress = true;
   endGameOverlay = { gameId: payload.session.game_id, outcome: viewerTeam === payload.game.winner ? "win" : "lose", phase: "splash" };
   render();
-  await delay(1000);
+  await delay(1600);
   if (endGameOverlay?.gameId === payload.session.game_id && endGameOverlay.phase === "splash") {
     endGameOverlay = { ...endGameOverlay, phase: "prompt" };
     render();
@@ -531,19 +537,13 @@ function renderFocusOverlay() {
 function renderEndGameOverlay() {
   if (!endGameOverlay) return "";
   const won = endGameOverlay.outcome === "win";
-  const title = won ? "You win" : "You lose";
-  if (endGameOverlay.phase === "splash") {
-    return `
-      <div class="endgame-overlay">
-        <div class="endgame-splash ${won ? "win" : "lose"}">${title}</div>
-      </div>
-    `;
-  }
+  const resultWord = won ? "WIN" : "LOSE";
+  const button = endGameOverlay.phase === "prompt" ? `<button id="play-again" type="button">Play again</button>` : `<div class="endgame-button-placeholder" aria-hidden="true"></div>`;
   return `
-    <div class="endgame-overlay">
+    <div class="endgame-overlay ${endGameOverlay.phase}">
       <div class="endgame-dialog ${won ? "win" : "lose"}">
-        <strong>${title}</strong>
-        <button id="play-again" type="button">Play again</button>
+        <strong class="endgame-title"><span>YOU</span><span>${resultWord}</span></strong>
+        ${button}
       </div>
     </div>
   `;
@@ -851,15 +851,15 @@ function selectablePawns(game: GamePayload) {
   return unique(actions.flatMap((action) => action.pawns.map((pawn) => pawn.id)));
 }
 
-function pathPreview(game: GamePayload, finalAction: ActionInfo | null) {
+function pathPreview(game: GamePayload, finalAction: ActionInfo | null): PathPreview {
   if (replayInProgress) return emptyPreview();
   if (isCustomSevenMode(game)) return customSevenPreview(game);
   const action = finalAction || singleSelectedPawnPreviewAction(game);
-  return action ? actionPreview(game, action) : emptyPreview();
+  return action?.preview?.valid ? action.preview : emptyPreview();
 }
 
-function emptyPreview() {
-  return { positions: [] as PreviewPosition[], capturePawnIds: [] as string[] };
+function emptyPreview(): PathPreview {
+  return { positions: [], capturePawnIds: [], valid: true };
 }
 
 function singleSelectedPawnPreviewAction(game: GamePayload) {
@@ -874,156 +874,62 @@ function singleSelectedPawnPreviewAction(game: GamePayload) {
   return candidates.length === 1 ? candidates[0] : null;
 }
 
-function customSevenPreview(game: GamePayload) {
-  return sevenMovesPreview(
-    game,
-    selectedSevenMoves
-      .filter((move): move is { pawnId: string; steps: number } => move.steps !== null)
-      .map((move) => ({ pawnId: move.pawnId, steps: move.steps, preferSafeEntry: true })),
-  );
-}
-
-function actionPreview(game: GamePayload, action: ActionInfo) {
-  if (action.type === "PlayEnterAction" && action.pawns[0]) {
-    const position = { kind: "TRACK", index: getEntryIndex(action.pawns[0].owner) } satisfies PreviewPosition;
-    return { positions: [position], capturePawnIds: capturePawnIdsAtPositions(game.pawns, [position], []) };
-  }
-  if (action.type === "PlayStepCardAction" && action.pawns[0] && action.steps !== null && action.direction !== null) {
-    const pawn = game.pawns.find((item) => item.id === action.pawns[0].id);
-    if (!pawn) return emptyPreview();
-    const preview = simulatePreviewMove(pawn, action.steps, action.direction, action.preferSafeEntry ?? true, actionAllowsImmediateSafeEntry(game, action));
-    return { positions: uniquePreviewPositions(preview.positions), capturePawnIds: capturePawnIdsAtPositions(game.pawns, preview.end ? [preview.end] : [], [pawn.id]) };
-  }
-  if (action.type === "PlaySevenSplitAction") {
-    return sevenMovesPreview(
-      game,
-      action.moves.map((move) => ({ pawnId: move.pawn.id, steps: move.steps, preferSafeEntry: move.preferSafeEntry })),
-    );
-  }
+function customSevenPreview(game: GamePayload): PathPreview {
+  const payload = customSevenPreviewPayload(game);
+  if (!payload) return emptyPreview();
+  const key = sevenPreviewCacheKey(game, payload);
+  const cached = sevenPreviewCache.get(key);
+  if (cached) return cached.valid ? cached : emptyPreview();
+  scheduleSevenPreview(key, gameId, token, payload);
   return emptyPreview();
 }
 
-function sevenMovesPreview(game: GamePayload, moves: { pawnId: string; steps: number; preferSafeEntry: boolean }[]) {
-  const virtualPawns = game.pawns.map((pawn) => ({ ...pawn, position: { ...pawn.position } }));
-  const positions: PreviewPosition[] = [];
-  const capturePawnIds: string[] = [];
+function customSevenPreviewPayload(game: GamePayload) {
+  if (!isCustomSevenMode(game) || selectedCardId === null || !token) return null;
+  const moves = selectedSevenMoves
+    .filter((move): move is { pawnId: string; steps: number } => move.steps !== null)
+    .map((move) => ({ pawn_id: move.pawnId, steps: move.steps, prefer_safe_entry: true }));
+  if (!moves.length) return null;
+  const representedRank = variantFilteredActions(game).find((action) => action.type === "PlaySevenSplitAction")?.representedRank || "7";
+  return { cardId: selectedCardId, representedRank, moves };
+}
 
-  for (const move of moves) {
-    const pawn = virtualPawns.find((item) => item.id === move.pawnId);
-    if (!pawn) continue;
-    const preview = simulatePreviewMove(pawn, move.steps, "FORWARD", move.preferSafeEntry, false);
-    positions.push(...preview.positions);
+function sevenPreviewCacheKey(game: GamePayload, payload: NonNullable<ReturnType<typeof customSevenPreviewPayload>>) {
+  const pawnState = game.pawns.map((pawn) => `${pawn.id}:${pawn.position.kind}:${pawn.position.index ?? ""}`).join(",");
+  const moves = payload.moves.map((move) => `${move.pawn_id}:${move.steps}:${move.prefer_safe_entry !== false ? 1 : 0}`).join("|");
+  return [gameId, game.dealRoundIndex, game.discardCount, game.drawCount, game.activePlayer, pawnState, payload.cardId, payload.representedRank, moves].join(";");
+}
 
-    const passCapturePositions = preview.positions.filter((position) => position.kind === "TRACK" && !entryOwner(position.index));
-    const capturedThisMove = capturePawnIdsAtPositions(virtualPawns, [...passCapturePositions, ...(preview.end ? [preview.end] : [])], [pawn.id]);
-    for (const capturedId of capturedThisMove) {
-      if (!capturePawnIds.includes(capturedId)) capturePawnIds.push(capturedId);
-      const capturedPawn = virtualPawns.find((item) => item.id === capturedId);
-      if (capturedPawn) capturedPawn.position = { kind: "BASE", index: null };
+function scheduleSevenPreview(key: string, requestGameId: string, requestToken: string, payload: NonNullable<ReturnType<typeof customSevenPreviewPayload>>) {
+  pendingSevenPreviewKey = key;
+  if (sevenPreviewTimer !== null) window.clearTimeout(sevenPreviewTimer);
+  sevenPreviewTimer = window.setTimeout(async () => {
+    sevenPreviewTimer = null;
+    try {
+      const preview = await previewSevenSplit(requestGameId, requestToken, payload.cardId, payload.representedRank, payload.moves);
+      rememberSevenPreview(key, preview);
+      if (pendingSevenPreviewKey === key) render();
+    } catch {
+      rememberSevenPreview(key, { positions: [], capturePawnIds: [], valid: false });
+      if (pendingSevenPreviewKey === key) render();
     }
-    if (preview.end) pawn.position = { ...preview.end };
+  }, 180);
+}
+
+function rememberSevenPreview(key: string, preview: PathPreview) {
+  sevenPreviewCache.set(key, preview);
+  while (sevenPreviewCache.size > 40) {
+    const oldest = sevenPreviewCache.keys().next().value;
+    if (!oldest) break;
+    sevenPreviewCache.delete(oldest);
   }
-
-  return { positions: uniquePreviewPositions(positions), capturePawnIds };
 }
 
-function actionAllowsImmediateSafeEntry(game: GamePayload, action: ActionInfo) {
-  if (action.type !== "PlayStepCardAction" || !action.preferSafeEntry || action.steps === null || action.direction !== "FORWARD" || !action.pawns[0]) return false;
-  return game.legalActions.some(
-    (other) =>
-      other.type === "PlayStepCardAction" &&
-      other.card?.id === action.card?.id &&
-      other.representedRank === action.representedRank &&
-      other.pawns[0]?.id === action.pawns[0].id &&
-      other.steps === action.steps &&
-      other.direction === action.direction &&
-      other.preferSafeEntry === false,
-  );
-}
-
-function simulatePreviewMove(
-  pawn: PawnInfo,
-  steps: number,
-  direction: "FORWARD" | "BACKWARD",
-  preferSafeEntry: boolean,
-  allowImmediateSafeEntry: boolean,
-) {
-  const positions: PreviewPosition[] = [];
-  if (pawn.position.index === null) return { positions, end: null as PreviewPosition | null };
-  if (pawn.position.kind === "SAFE") {
-    if (direction === "BACKWARD") return { positions, end: null as PreviewPosition | null };
-    for (let offset = 1; offset <= steps; offset += 1) {
-      const safeIndex = pawn.position.index + offset;
-      if (safeIndex < 4) positions.push({ kind: "SAFE", owner: pawn.owner, index: safeIndex });
-    }
-    return { positions, end: positions.at(-1) || null };
-  }
-  if (pawn.position.kind !== "TRACK") return { positions, end: null as PreviewPosition | null };
-
-  let trackIndex = pawn.position.index;
-  let safeIndex: number | null = null;
-  let remaining = steps;
-  let crossedOwnEntryDuringPreview = false;
-  const ownEntry = getEntryIndex(pawn.owner);
-
-  while (remaining > 0) {
-    if (direction === "BACKWARD") {
-      trackIndex = (trackIndex + 63) % 64;
-      positions.push({ kind: "TRACK", index: trackIndex });
-      remaining -= 1;
-      continue;
-    }
-    if (safeIndex !== null) {
-      safeIndex += 1;
-      if (safeIndex < 4) positions.push({ kind: "SAFE", owner: pawn.owner, index: safeIndex });
-      remaining -= 1;
-      continue;
-    }
-    if (preferSafeEntry && trackIndex === ownEntry && (allowImmediateSafeEntry || crossedOwnEntryDuringPreview)) {
-      safeIndex = 0;
-      positions.push({ kind: "SAFE", owner: pawn.owner, index: safeIndex });
-      remaining -= 1;
-      continue;
-    }
-
-    const previousTrackIndex = trackIndex;
-    const candidate = (trackIndex + 1) % 64;
-    const candidateEntryOwner = entryOwner(candidate);
-    trackIndex = candidate;
-    if (candidateEntryOwner && candidateEntryOwner !== pawn.owner) continue;
-
-    positions.push({ kind: "TRACK", index: trackIndex });
-    remaining -= 1;
-    if (trackIndex === ownEntry && previousTrackIndex === (ownEntry + 63) % 64) crossedOwnEntryDuringPreview = true;
-  }
-  return { positions, end: positions.at(-1) || null };
-}
-
-function entryOwner(trackIndex: number) {
-  return seats.find((seat) => getEntryIndex(seat) === trackIndex) || null;
-}
-
-function capturePawnIdsAtPositions(pawns: PawnInfo[], positions: PreviewPosition[], ignoredPawnIds: string[]) {
-  const ignored = new Set(ignoredPawnIds);
-  const keys = new Set(positions.map(previewPositionKey));
-  return pawns
-    .filter((pawn) => !ignored.has(pawn.id))
-    .filter((pawn) => pawn.position.index !== null && keys.has(previewPositionKey({ kind: pawn.position.kind, owner: pawn.owner, index: pawn.position.index })))
-    .map((pawn) => pawn.id);
-}
-
-function previewPositionKey(position: PreviewPosition) {
-  return position.kind === "TRACK" ? `T:${position.index}` : `S:${position.owner}:${position.index}`;
-}
-
-function uniquePreviewPositions(positions: PreviewPosition[]) {
-  const seen = new Set<string>();
-  return positions.filter((position) => {
-    const key = previewPositionKey(position);
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+function resetSevenPreviewCache() {
+  sevenPreviewCache.clear();
+  pendingSevenPreviewKey = "";
+  if (sevenPreviewTimer !== null) window.clearTimeout(sevenPreviewTimer);
+  sevenPreviewTimer = null;
 }
 
 function isReplayMovementEvent(event: TurnEvent | null) {

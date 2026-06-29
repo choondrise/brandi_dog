@@ -17,7 +17,7 @@ from brandi_dog.engine.cards import Rank
 from brandi_dog.engine import rules as engine_rules
 
 from .schemas import LobbyPlayer, PublicSession, SeatInfo, SevenSplitMoveRequest
-from .serialization import action_key, active_player, describe_action, serialize_action, serialize_game, serialize_pawns
+from .serialization import action_key, active_player, describe_action, serialize_action, serialize_game, serialize_pawns, seven_preview
 
 
 SEAT_ORDER = (PlayerId.A1, PlayerId.B1, PlayerId.A2, PlayerId.B2)
@@ -149,6 +149,27 @@ class SessionManager:
         if pause_for_swap:
             self._schedule_automatic_after_swap_overlay(session)
         return session, events
+
+    async def preview_seven(
+        self,
+        game_id: str,
+        token: str,
+        card_id: Optional[int],
+        represented_rank: Optional[str],
+        seven_moves: list[SevenSplitMoveRequest],
+    ) -> dict[str, Any]:
+        session = self._get(game_id)
+        async with session.lock:
+            self._ensure_playing(session)
+            assert session.state is not None
+            player = self._require_player(session, token)
+            actor = active_player(session.state)
+            if actor is None:
+                raise HTTPException(status_code=409, detail="Game is over")
+            if player.seat != actor:
+                raise HTTPException(status_code=403, detail="It is not your turn")
+            action = self._build_custom_seven_action(actor, card_id, represented_rank, seven_moves)
+            return seven_preview(session.state, action)
 
     def _build_custom_seven_action(
         self,

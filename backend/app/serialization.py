@@ -15,6 +15,7 @@ from brandi_dog.engine.actions import (
     SkipTurnAction,
     SwapCardAction,
 )
+from brandi_dog.engine.board import simulate_entry_from_base, simulate_step_move, track_occupant
 from brandi_dog.engine.cards import Card, Rank, render_card
 from brandi_dog.engine.engine import GameEngine
 from brandi_dog.engine.state import (
@@ -24,11 +25,13 @@ from brandi_dog.engine.state import (
     Position,
     PositionKind,
     RoundStage,
+    base_position,
     Team,
     active_swap_player,
     get_pawn_position,
     hand_of,
     player_pawns,
+    set_pawn_position,
 )
 
 
@@ -71,7 +74,7 @@ def serialize_game(
         "hands": _hands_payload(engine, state, viewer),
         "discardCount": len(state.discard_pile),
         "drawCount": len(state.draw_pile),
-        "legalActions": [serialize_action(idx, action, engine.cards_by_id) for idx, action in enumerate(legal)],
+        "legalActions": [serialize_action(idx, action, engine.cards_by_id, state) for idx, action in enumerate(legal)],
     }
 
 
@@ -131,7 +134,7 @@ def _position_payload(position: Position) -> dict[str, Any]:
     return {"kind": position.kind.value, "index": position.index}
 
 
-def serialize_action(action_id: int, action: Action, cards_by_id: dict[int, Card]) -> dict[str, Any]:
+def serialize_action(action_id: int, action: Action, cards_by_id: dict[int, Card], state: Optional[GameState] = None) -> dict[str, Any]:
     payload = {
         "id": action_id,
         "key": action_key(action),
@@ -144,6 +147,7 @@ def serialize_action(action_id: int, action: Action, cards_by_id: dict[int, Card
         "steps": None,
         "direction": None,
         "preferSafeEntry": None,
+        "preview": action_preview(state, action) if state is not None else empty_preview(),
     }
     card_id = getattr(action, "card_id", None)
     if card_id is not None:
@@ -171,6 +175,129 @@ def serialize_action(action_id: int, action: Action, cards_by_id: dict[int, Card
             for move in action.moves
         ]
     return payload
+
+
+def empty_preview() -> dict[str, Any]:
+    return {"positions": [], "capturePawnIds": [], "valid": True}
+
+
+def action_preview(state: Optional[GameState], action: Action) -> dict[str, Any]:
+    if state is None:
+        return empty_preview()
+    if isinstance(action, PlayEnterAction):
+        path = simulate_entry_from_base(state, action.pawn)
+        if path is None:
+            return {"positions": [], "capturePawnIds": [], "valid": False}
+        return {"positions": [_preview_position_payload(path.end, action.pawn.owner)], "capturePawnIds": [], "valid": True}
+    if isinstance(action, PlayStepCardAction):
+        path = simulate_step_move(
+            state,
+            action.pawn,
+            direction=action.direction,
+            steps=action.steps,
+            prefer_safe_entry=action.prefer_safe_entry,
+        )
+        if path is None:
+            return {"positions": [], "capturePawnIds": [], "valid": False}
+        return {
+            "positions": [_preview_position_payload(position, action.pawn.owner) for position in path.counted_positions],
+            "capturePawnIds": _landing_capture_ids(state, action.pawn, path.end),
+            "valid": True,
+        }
+    if isinstance(action, PlaySevenSplitAction):
+        return seven_preview(state, action)
+    return empty_preview()
+
+
+def seven_preview(state: GameState, action: PlaySevenSplitAction) -> dict[str, Any]:
+    preview_state = state
+    positions: list[dict[str, Any]] = []
+    capture_ids: list[str] = []
+    for move in action.moves:
+        path = simulate_step_move(
+            preview_state,
+            move.pawn,
+            direction=MoveDirection.FORWARD,
+            steps=move.steps,
+            prefer_safe_entry=move.prefer_safe_entry,
+        )
+        if path is None:
+            return {"positions": _unique_positions(positions), "capturePawnIds": _unique(capture_ids), "valid": False}
+        positions.extend(_preview_position_payload(position, move.pawn.owner) for position in path.counted_positions)
+        before = preview_state
+        preview_state = _apply_preview_move(
+            preview_state,
+            move.pawn,
+            path.end,
+            path.traversed_open_track_indices,
+            pass_capture=True,
+        )
+        capture_ids.extend(_captured_pawn_ids(before, preview_state, move.pawn))
+    return {"positions": _unique_positions(positions), "capturePawnIds": _unique(capture_ids), "valid": True}
+
+
+def _apply_preview_move(
+    state: GameState,
+    pawn: PawnRef,
+    end: Position,
+    traversed_open_track_indices: tuple[int, ...],
+    pass_capture: bool,
+) -> GameState:
+    updated = state
+    if pass_capture:
+        for track_index in traversed_open_track_indices:
+            victim = track_occupant(updated, track_index, ignore=[pawn])
+            if victim is not None:
+                updated = set_pawn_position(updated, victim, base_position())
+    updated = set_pawn_position(updated, pawn, end)
+    if end.kind == PositionKind.TRACK and end.index is not None:
+        victim = track_occupant(updated, end.index, ignore=[pawn])
+        if victim is not None:
+            updated = set_pawn_position(updated, victim, base_position())
+    return updated
+
+
+def _landing_capture_ids(state: GameState, pawn: PawnRef, end: Position) -> list[str]:
+    if end.kind != PositionKind.TRACK or end.index is None:
+        return []
+    victim = track_occupant(state, end.index, ignore=[pawn])
+    return [] if victim is None else [_pawn_ref_payload(victim)["id"]]
+
+
+def _captured_pawn_ids(before: GameState, after: GameState, moving_pawn: PawnRef) -> list[str]:
+    captured: list[str] = []
+    for player in PlayerId:
+        for pawn in player_pawns(player):
+            if pawn == moving_pawn:
+                continue
+            before_pos = get_pawn_position(before, pawn)
+            after_pos = get_pawn_position(after, pawn)
+            if before_pos.kind != PositionKind.BASE and after_pos.kind == PositionKind.BASE:
+                captured.append(_pawn_ref_payload(pawn)["id"])
+    return captured
+
+
+def _preview_position_payload(position: Position, owner: PlayerId) -> dict[str, Any]:
+    payload = {"kind": position.kind.value, "index": position.index}
+    if position.kind == PositionKind.SAFE:
+        payload["owner"] = owner.name
+    return payload
+
+
+def _unique(values: list[str]) -> list[str]:
+    return list(dict.fromkeys(values))
+
+
+def _unique_positions(positions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[tuple[Any, ...]] = set()
+    result: list[dict[str, Any]] = []
+    for position in positions:
+        key = (position.get("kind"), position.get("owner"), position.get("index"))
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(position)
+    return result
 
 
 def action_key(action: Action) -> str:

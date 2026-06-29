@@ -112,6 +112,43 @@ function pawnPoint(pawn: PawnInfo) {
   return basePoint(pawn.owner, pawn.number);
 }
 
+function activeEdgeSvg(activePlayer: Seat | null) {
+  if (!activePlayer) return "";
+  const edges: Record<Seat, { full: string; half: string }> = {
+    A1: { full: "15,15 50,0 85,15", half: activeHalfEdgePoints({ x: 15, y: 15 }, { x: 50, y: 0 }, { x: 85, y: 15 }) },
+    B1: { full: "85,15 100,50 85,85", half: activeHalfEdgePoints({ x: 85, y: 15 }, { x: 100, y: 50 }, { x: 85, y: 85 }) },
+    A2: { full: "85,85 50,100 15,85", half: activeHalfEdgePoints({ x: 85, y: 85 }, { x: 50, y: 100 }, { x: 15, y: 85 }) },
+    B2: { full: "15,85 0,50 15,15", half: activeHalfEdgePoints({ x: 15, y: 85 }, { x: 0, y: 50 }, { x: 15, y: 15 }) },
+  };
+  const edge = edges[activePlayer];
+  return `
+    <svg class="board-active-edges" viewBox="0 0 100 100" aria-hidden="true" style="--active-seat-color:${seatColors[activePlayer]}">
+      <polyline class="active-edge-main" points="${edge.full}" />
+      <polyline class="active-edge-secondary" points="${edge.half}" />
+    </svg>
+  `;
+}
+
+function activeHalfEdgePoints(left: { x: number; y: number }, vertex: { x: number; y: number }, right: { x: number; y: number }) {
+  const points = [midpoint(left, vertex), vertex, midpoint(vertex, right)].map((point) => stretchFromCenter(point, 1));
+  return points.map((point) => `${formatPoint(point.x)},${formatPoint(point.y)}`).join(" ");
+}
+
+function midpoint(a: { x: number; y: number }, b: { x: number; y: number }) {
+  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+}
+
+function stretchFromCenter(point: { x: number; y: number }, amount: number) {
+  const dx = point.x - 50;
+  const dy = point.y - 50;
+  const length = Math.hypot(dx, dy) || 1;
+  return { x: point.x + (dx / length) * amount, y: point.y + (dy / length) * amount };
+}
+
+function formatPoint(value: number) {
+  return Number(value.toFixed(2));
+}
+
 function previewPositionKey(position: PreviewPosition) {
   return position.kind === "TRACK" ? `T:${position.index}` : `S:${position.owner}:${position.index}`;
 }
@@ -182,6 +219,7 @@ export function renderBoard(
   return `
     <div class="board-shell ${activePlayer ? `active-${activePlayer.toLowerCase()}` : ""} ${slowMotion ? "slow-motion" : ""}">
       <div class="board-octagon"></div>
+      ${activeEdgeSvg(activePlayer)}
       <div class="board-center">Brandi<br/>Dog</div>
       ${track}${safe}${bases}${pawnHtml}
       <span class="seat-label a1 ${activePlayer === "A1" ? "active" : ""}">${labelFor("A1")}</span>

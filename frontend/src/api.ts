@@ -1,4 +1,4 @@
-import type { AppPayload, BotLevel, Seat } from "./types";
+import type { ActionPreview, AppPayload, BotLevel, Seat } from "./types";
 
 const fallbackBase = `${window.location.protocol}//${window.location.hostname}:8000`;
 const env = (import.meta as unknown as { env?: { VITE_API_BASE?: string } }).env || {};
@@ -64,6 +64,20 @@ export function playAction(gameId: string, token: string, actionKey: string) {
   return request<AppPayload>(`/api/sessions/${gameId}/action`, {
     method: "POST",
     body: JSON.stringify({ token, action_key: actionKey }),
+  });
+}
+
+
+export function previewSevenSplit(
+  gameId: string,
+  token: string,
+  cardId: number,
+  representedRank: string,
+  moves: { pawn_id: string; steps: number; prefer_safe_entry?: boolean }[],
+) {
+  return request<ActionPreview>(`/api/sessions/${gameId}/preview-seven`, {
+    method: "POST",
+    body: JSON.stringify({ token, card_id: cardId, represented_rank: representedRank, seven_moves: moves }),
   });
 }
 

@@ -35,6 +35,13 @@ class SevenSplitMoveRequest(BaseModel):
     prefer_safe_entry: bool = True
 
 
+class SevenPreviewRequest(BaseModel):
+    token: str
+    card_id: Optional[int] = None
+    represented_rank: Optional[str] = None
+    seven_moves: List[SevenSplitMoveRequest] = Field(default_factory=list)
+
+
 class ActionRequest(BaseModel):
     token: str
     action_id: Optional[int] = None

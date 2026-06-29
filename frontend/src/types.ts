@@ -52,6 +52,12 @@ export interface ActionMoveInfo {
   preferSafeEntry: boolean;
 }
 
+export interface ActionPreview {
+  positions: { kind: "TRACK" | "SAFE"; index: number; owner?: Seat }[];
+  capturePawnIds: string[];
+  valid: boolean;
+}
+
 export interface ActionInfo {
   id: number;
   key: string;
@@ -65,6 +71,7 @@ export interface ActionInfo {
   steps: number | null;
   direction: "FORWARD" | "BACKWARD" | null;
   preferSafeEntry: boolean | null;
+  preview: ActionPreview;
 }
 
 

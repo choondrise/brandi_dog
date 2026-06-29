@@ -354,6 +354,36 @@ label {
   box-shadow: inset 0 0 0 10px rgba(255, 250, 242, 0.24), 0 18px 42px rgba(33, 27, 19, 0.16);
 }
 
+.board-active-edges {
+  position: absolute;
+  inset: 4%;
+  z-index: 1;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.board-active-edges polyline {
+  fill: none;
+  stroke: var(--active-seat-color);
+  stroke-width: 0.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  animation: active-edge-pulse 1.9s ease-in-out infinite;
+}
+
+@keyframes active-edge-pulse {
+  0%, 100% {
+    opacity: 0.42;
+    stroke: color-mix(in srgb, var(--active-seat-color) 68%, #e6c28f);
+    filter: drop-shadow(0 0 1px color-mix(in srgb, var(--active-seat-color) 32%, transparent));
+  }
+  50% {
+    opacity: 1;
+    stroke: var(--active-seat-color);
+    filter: drop-shadow(0 0 3px color-mix(in srgb, var(--active-seat-color) 62%, transparent));
+  }
+}
+
 .board-center {
   position: absolute;
   left: 50%;
@@ -380,6 +410,7 @@ label {
 }
 
 .hole {
+  z-index: 2;
   width: 3.15%;
   aspect-ratio: 1;
   background: #d8ae7f;
@@ -398,6 +429,7 @@ label {
 }
 
 .pawn {
+  z-index: 3;
   --pawn-transition: 420ms;
   width: 5.3%;
   min-height: 0;
@@ -589,28 +621,9 @@ label {
   display: grid;
   place-items: center;
   padding: 24px;
-  background: rgba(0, 0, 0, 0.74);
+  background: rgba(0, 0, 0, 0.78);
   backdrop-filter: blur(3px);
-}
-
-.endgame-splash {
-  font-size: clamp(4.5rem, 22.4vw, 11.2rem);
-  font-weight: 950;
-  line-height: 0.95;
-  text-align: center;
-  text-transform: uppercase;
-  -webkit-text-stroke: 2px #fffaf2;
-  text-shadow: 0 0 2px #fffaf2;
-}
-
-.endgame-splash.win,
-.endgame-dialog.win strong {
-  color: #143d2b;
-}
-
-.endgame-splash.lose,
-.endgame-dialog.lose strong {
-  color: #b32822;
+  animation: endgame-backdrop-in 720ms ease-out both;
 }
 
 .endgame-dialog {
@@ -618,23 +631,69 @@ label {
   display: grid;
   gap: 20px;
   justify-items: center;
+  background: transparent;
 }
 
-.endgame-dialog strong {
-  font-size: clamp(2.8rem, 14vw, 7rem);
-  line-height: 0.95;
+.endgame-title {
+  display: grid;
+  justify-items: center;
+  gap: 0.02em;
+  color: #143d2b;
+  font-size: clamp(4.5rem, 22.4vw, 11.2rem);
+  font-weight: 950;
+  line-height: 0.78;
   text-align: center;
   text-transform: uppercase;
+  letter-spacing: 0;
   -webkit-text-stroke: 2px #fffaf2;
   text-shadow: 0 0 2px #fffaf2;
+  animation: endgame-title-in 1040ms cubic-bezier(0.18, 0.9, 0.2, 1.08) 360ms both;
+}
+
+.endgame-dialog.lose .endgame-title {
+  color: #b32822;
+}
+
+.endgame-dialog button,
+.endgame-button-placeholder {
+  width: 100%;
+  min-height: 44px;
 }
 
 .endgame-dialog button {
-  width: 100%;
+  opacity: 0;
+  transform: translateY(8px);
+  animation: endgame-button-in 840ms ease-out 240ms both;
+}
+
+.endgame-overlay.prompt {
+  animation: none;
+  background: rgba(0, 0, 0, 0.78);
+  backdrop-filter: blur(3px);
+}
+
+.endgame-overlay.prompt .endgame-title {
+  animation: none;
+  opacity: 1;
+  transform: translateY(0) scale(1);
 }
 
 .endgame-dialog.lose button {
   background: #b32822;
+}
+
+@keyframes endgame-backdrop-in {
+  from { background: rgba(0, 0, 0, 0); backdrop-filter: blur(0); }
+  to { background: rgba(0, 0, 0, 0.78); backdrop-filter: blur(3px); }
+}
+
+@keyframes endgame-title-in {
+  from { opacity: 0; transform: translateY(12px) scale(0.94); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes endgame-button-in {
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .focus-overlay {

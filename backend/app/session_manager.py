@@ -14,6 +14,7 @@ from brandi_dog.engine.engine import GameEngine
 from brandi_dog.engine.state import GameState, PawnRef, PlayerId, RoundStage
 
 from .bots import BOT_LEVELS, build_bot
+from .dataset_logger import HumanDatasetLogger
 from brandi_dog.engine.cards import Rank
 from brandi_dog.engine import rules as engine_rules
 
@@ -45,11 +46,13 @@ class GameSession:
     bot_agents: Dict[PlayerId, Any] = field(default_factory=dict)
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     websockets: dict[WebSocket, Optional[str]] = field(default_factory=dict)
+    decision_log_index: int = 0
 
 
 class SessionManager:
     def __init__(self):
         self.sessions: Dict[str, GameSession] = {}
+        self.dataset_logger = HumanDatasetLogger()
 
     async def create_session(self, host_name: str) -> tuple[GameSession, str]:
         game_id = self._new_game_id()
@@ -139,12 +142,14 @@ class SessionManager:
             if player.seat != actor:
                 raise HTTPException(status_code=403, detail="It is not your turn")
             events: list[dict[str, Any]] = []
+            legal = session.engine.legal_actions(session.state)
             if seven_moves is not None:
                 action = self._build_custom_seven_action(actor, card_id, represented_rank, seven_moves)
+                self._log_human_dataset_decision(session, player, tuple(legal), action)
                 self._apply_custom_seven_locked(session, action, events)
             else:
-                legal = session.engine.legal_actions(session.state)
                 action = self._select_legal_action(legal, action_id, selected_action_key)
+                self._log_human_dataset_decision(session, player, tuple(legal), action)
                 self._apply_action_locked(session, action, events)
             pause_for_swap = self._advance_automatic_locked(session, events)
         await self._broadcast(session, events)
@@ -172,6 +177,25 @@ class SessionManager:
                 raise HTTPException(status_code=403, detail="It is not your turn")
             action = self._build_custom_seven_action(actor, card_id, represented_rank, seven_moves)
             return seven_preview(session.state, action)
+
+    def _log_human_dataset_decision(self, session: GameSession, player: HumanPlayer, legal_actions: tuple, action) -> None:
+        assert session.engine is not None
+        assert session.state is not None
+        try:
+            self.dataset_logger.log_human_decision(
+                game_id=session.game_id,
+                turn_index=session.decision_log_index,
+                engine=session.engine,
+                state=session.state,
+                legal_actions=legal_actions,
+                chosen_action=action,
+                human_name=player.name,
+                token_hint=self._hint(player.token),
+            )
+        except Exception:
+            logger.exception("Failed to write human dataset sample for game %s", session.game_id)
+        finally:
+            session.decision_log_index += 1
 
     def _build_custom_seven_action(
         self,

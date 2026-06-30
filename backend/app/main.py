@@ -42,6 +42,11 @@ def health() -> HealthResponse:
     return HealthResponse()
 
 
+@app.get("/api/dataset/status")
+def dataset_status():
+    return manager.dataset_logger.status()
+
+
 @app.post("/api/sessions", response_model=SessionCreated)
 async def create_session(request: CreateSessionRequest) -> SessionCreated:
     session, player_token = await manager.create_session(request.host_name)

@@ -50,6 +50,7 @@ frontend/public/cards/archive/
 
 # Local generated data and experiment artifacts
 /data/
+backend/data/
 /runs/
 /stats
 brandi_dog/simulations/data/

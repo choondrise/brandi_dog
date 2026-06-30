@@ -27,3 +27,42 @@ curl http://localhost:8000/api/health
 - `Cheater`: `MonteCarloAgent`
 
 Sessions are in memory. Restarting the backend clears active games.
+
+## Human Dataset Collection
+
+The backend can append human decisions as raw JSONL samples compatible with the existing supervised-learning encoders. Collection is disabled by default. When enabled, rows are written directly to disk and are not kept in RAM.
+
+Environment variables:
+
+```bash
+BRANDI_COLLECT_HUMAN_DATASET=1
+BRANDI_DATASET_DIR=/app/data
+# optional explicit paths
+BRANDI_TURN_DATASET_PATH=/app/data/human_turn_decisions.jsonl
+BRANDI_SWAP_DATASET_PATH=/app/data/human_swap_decisions.jsonl
+BRANDI_DATASET_CANDIDATE_ALTERNATIVES=10
+```
+
+Files:
+
+- `human_turn_decisions.jsonl`: PLAY_LOOP decisions, using the same raw sample builder as the existing imitation/ranking dataset pipeline.
+- `human_swap_decisions.jsonl`: TEAM_SWAPS decisions, same top-level JSONL shape in a separate file for a future swap model.
+
+Status check:
+
+```bash
+curl http://localhost:8000/api/dataset/status
+```
+
+Encode turn samples later with:
+
+```bash
+python -m brandi_dog.agents.supervised_learning.encoders encode \
+  --encoder v2 \
+  --input /app/data/human_turn_decisions.jsonl \
+  --output /app/data/human_turn_decisions_encoded_v2.jsonl
+
+python -m brandi_dog.agents.supervised_learning.encoders to-pt \
+  --input /app/data/human_turn_decisions_encoded_v2.jsonl \
+  --output /app/data/human_turn_decisions_encoded_v2.pt
+```

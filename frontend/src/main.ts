@@ -27,6 +27,11 @@ let currentReplayEvent: TurnEvent | null = null;
 let replayEndpointEventId: string | null = null;
 let replayPathEventId: string | null = null;
 let replaySettleEventId: string | null = null;
+const AUTO_SKIP_STORAGE_KEY = "brandi.autoSkipAnimations";
+let fastForwardReplay = false;
+let autoSkipAnimations = localStorage.getItem(AUTO_SKIP_STORAGE_KEY) === "1";
+let fastForwardWake: (() => void) | null = null;
+let lastTurnWhooshKey = "";
 let seenEventIds = new Set<string>();
 let currentView: "home" | "rules" | "tutorial" = "home";
 type FocusOverlay =
@@ -86,6 +91,8 @@ function clearIdentity() {
   replayEndpointEventId = null;
   replayPathEventId = null;
   replaySettleEventId = null;
+  fastForwardReplay = false;
+  wakeFastForward();
   replayHandCards = null;
   optimisticHandCards = null;
   endGameOverlay = null;
@@ -93,6 +100,7 @@ function clearIdentity() {
   endGameFlowInProgress = false;
   resetSevenPreviewCache();
   seenEventIds = new Set<string>();
+  lastTurnWhooshKey = "";
   render();
 }
 
@@ -336,7 +344,10 @@ function renderLobby() {
 
 function bindLobbyEvents() {
   bindSoundToggle();
-  document.querySelector<HTMLElement>("#leave")!.onclick = clearIdentity;
+  document.querySelector<HTMLElement>("#leave")!.onclick = () => {
+    playSelectionTick();
+    clearIdentity();
+  };
   document.querySelector<HTMLElement>("#copy-code")!.onclick = async () => {
     await navigator.clipboard?.writeText(state!.session.game_id);
   };
@@ -548,13 +559,16 @@ async function playFocusOverlays(overlays: FocusOverlay[]) {
     activeOverlay = overlay;
     render();
     if (overlay.kind === "deal") {
-      playSound("cardDeal");
-      await delay(2000);
+      await delay(1500);
+      playSound("diceRoll");
+      await delay(500);
       activeOverlay = { ...overlay, rolling: false };
       render();
-      playSound("diceRoll");
-      await delay(700);
+      await delay(480);
+      playSound("cardDeal");
+      await delay(300);
     } else {
+      if (overlay.kind === "swap") playSound("playCard");
       await delay(2000);
     }
   }
@@ -563,37 +577,55 @@ async function playFocusOverlays(overlays: FocusOverlay[]) {
 
 async function replayEvents(events: TurnEvent[], overlays: FocusOverlay[] = [], playDealSoundAfterReplay = false) {
   replayInProgress = true;
+  fastForwardReplay = autoSkipAnimations;
   replayPawns = events[0].pawnsBefore;
   currentReplayEvent = null;
   render();
-  await delay(260);
+  await replayDelay(260);
   for (const event of events) {
+    if (fastForwardReplay) {
+      replayPawns = event.pawnsAfter;
+      continue;
+    }
     currentReplayEvent = event;
     replayEndpointEventId = null;
     replaySettleEventId = null;
     replayPathEventId = isReplayPathEvent(event) ? event.id : null;
     replayPawns = event.pawnsBefore;
     render();
-    if (event.card) playSound("playCard");
-    await delay(replayAnticipationDelay(event));
+    if (isFastNoMoveEvent(event)) playSound("skipTurn");
+    scheduleReplayPathTicks(event);
+    await replayDelay(replayAnticipationDelay(event));
+
+    if (fastForwardReplay) {
+      replayPawns = event.pawnsAfter;
+      continue;
+    }
 
     replayPathEventId = null;
     replayEndpointEventId = isReplayMovementEvent(event) ? event.id : null;
     replayPawns = event.pawnsAfter;
     render();
-    await delay(replayMoveAnimationDelay(event));
+    await replayDelay(replayMoveAnimationDelay(event));
+    if (fastForwardReplay) {
+      replayEndpointEventId = null;
+      replayPawns = event.pawnsAfter;
+      continue;
+    }
     if (isReplayMovementEvent(event)) playSound("pawnMove");
 
     replayEndpointEventId = null;
     replaySettleEventId = isReplayMovementEvent(event) ? event.id : null;
     replayPawns = event.pawnsAfter;
     render();
-    await delay(replaySettleDelay(event));
+    await replayDelay(replaySettleDelay(event));
   }
   currentReplayEvent = null;
   replayEndpointEventId = null;
   replayPathEventId = null;
   replaySettleEventId = null;
+  fastForwardReplay = false;
+  fastForwardWake = null;
   replayPawns = null;
   replayBaseGame = null;
   replayInProgress = false;
@@ -623,8 +655,8 @@ async function maybeStartEndGameFlow(payload: AppPayload) {
 
 function renderTurnNotice(game: GamePayload) {
   if (currentReplayEvent || replayInProgress || actionInFlight || endGameOverlay) return "";
-  if (!state?.viewerSeat || game.phase !== "PLAY_LOOP" || game.activePlayer !== state.viewerSeat) return "";
-  if (selectedCardId !== null || noCardAction(game)) return "";
+  if (!isPlayableViewerTurn(game)) return "";
+  if (selectedCardId !== null) return "";
   return `
     <div class="replay-banner turn-notice human">
       <div>
@@ -633,6 +665,23 @@ function renderTurnNotice(game: GamePayload) {
       </div>
     </div>
   `;
+}
+
+function isPlayableViewerTurn(game: GamePayload) {
+  return Boolean(
+    state?.viewerSeat &&
+      game.phase === "PLAY_LOOP" &&
+      game.activePlayer === state.viewerSeat &&
+      game.legalActions.some((action) => action.card),
+  );
+}
+
+function playTurnWhooshIfNeeded(game: GamePayload) {
+  if (!isPlayableViewerTurn(game) || currentReplayEvent || replayInProgress || actionInFlight || endGameOverlay) return;
+  const key = [gameId, game.dealRoundIndex, game.discardCount, game.drawCount, game.activePlayer].join(":");
+  if (lastTurnWhooshKey === key) return;
+  lastTurnWhooshKey = key;
+  playSound("turnWhoosh");
 }
 
 function renderReplayBanner() {
@@ -694,6 +743,24 @@ function delay(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
+function replayDelay(ms: number) {
+  if (fastForwardReplay || ms <= 0) return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    const timeout = window.setTimeout(done, ms);
+    const previousWake = fastForwardWake;
+    fastForwardWake = done;
+    function done() {
+      window.clearTimeout(timeout);
+      if (fastForwardWake === done) fastForwardWake = previousWake;
+      resolve();
+    }
+  });
+}
+
+function wakeFastForward() {
+  fastForwardWake?.();
+}
+
 function renderSoundToggle() {
   const enabled = soundEnabled();
   return `
@@ -708,6 +775,28 @@ function bindSoundToggle() {
     toggleSound();
     render();
   });
+  document.querySelector<HTMLButtonElement>("#auto-skip-toggle")?.addEventListener("click", () => {
+    playSelectionTick();
+    autoSkipAnimations = !autoSkipAnimations;
+    localStorage.setItem(AUTO_SKIP_STORAGE_KEY, autoSkipAnimations ? "1" : "0");
+    if (autoSkipAnimations && replayInProgress) {
+      fastForwardReplay = true;
+      wakeFastForward();
+    }
+    render();
+  });
+}
+
+function renderAutoSkipToggle() {
+  return `
+    <button type="button" class="ghost auto-skip-toggle" id="auto-skip-toggle" aria-pressed="${autoSkipAnimations}" aria-label="${autoSkipAnimations ? "Always skip animations" : "Play animations"}" title="${autoSkipAnimations ? "Always skip animations" : "Play animations"}">
+      &gt;&gt;
+    </button>
+  `;
+}
+
+function playSelectionTick() {
+  playSound("selectionTick");
 }
 
 function soundOnIcon() {
@@ -718,13 +807,26 @@ function soundOffIcon() {
   return `<svg viewBox="0 0 24 24" focusable="false"><path d="M4 9v6h4l5 4V5L8 9H4Z"></path><path d="M19 9l-5 5"></path><path d="M14 9l5 5"></path></svg>`;
 }
 
+function renderDiePips(value: number) {
+  const pipMap: Record<number, number[]> = {
+    1: [5],
+    2: [1, 9],
+    3: [1, 5, 9],
+    4: [1, 3, 7, 9],
+    5: [1, 3, 5, 7, 9],
+    6: [1, 3, 4, 6, 7, 9],
+  };
+  const pips = pipMap[value] || pipMap[1];
+  return pips.map((position) => `<span class="die-pip pip-${position}" aria-hidden="true"></span>`).join("");
+}
+
 function renderFocusOverlay() {
   if (!activeOverlay) return "";
   if (activeOverlay.kind === "deal") {
     return `
       <div class="focus-overlay">
         <div class="focus-card deal-focus">
-          <div class="die ${activeOverlay.rolling ? "rolling" : ""}">${activeOverlay.rolling ? "?" : activeOverlay.count}</div>
+          <div class="die ${activeOverlay.rolling ? "rolling" : `face-${activeOverlay.count}`}">${activeOverlay.rolling ? "?" : renderDiePips(activeOverlay.count)}</div>
         </div>
       </div>
     `;
@@ -796,10 +898,10 @@ function renderGame() {
   const replayEndpointDuration = replayEndpointEventId && currentReplayEvent ? replayMoveAnimationDelay(currentReplayEvent) : null;
   const replaySettleDuration = replaySettleEventId && currentReplayEvent ? replaySettleDelay(currentReplayEvent) : null;
   const canPlay = Boolean(finalAction || playableNoCardAction || customSevenReady);
+  playTurnWhooshIfNeeded(game);
   app.innerHTML = `
     <main class="game">
       <header class="game-status">
-        <button class="ghost player-button" id="back-lobby">${state!.viewerSeat ? displaySeatName(state!.viewerSeat) : "Spectator"}</button>
         <div>
           <span class="eyebrow">${game.phase.replace("_", " ")}</span>
           <strong>${game.winner ? `Team ${game.winner} wins` : game.activePlayer ? `${displaySeatName(game.activePlayer)} to move` : "Game over"}</strong>
@@ -807,6 +909,7 @@ function renderGame() {
         </div>
         <div class="header-actions">
           ${renderSoundToggle()}
+          ${renderAutoSkipToggle()}
           <button class="ghost exit-button" id="exit-game">Exit</button>
         </div>
       </header>
@@ -823,24 +926,35 @@ function renderGame() {
         <div class="cards">${hand.map((card) => renderCard(card, !replayInProgress && cardPlayable(game, card.id), selectedCardId === card.id)).join("") || `<span class="muted">No visible cards</span>`}</div>
         ${replayInProgress ? `<div class="selection-panel"><p class="muted">Resolving moves before the next hand is dealt.</p></div>` : renderSelectionControls(game, actionOptions)}
       </section>
-      <section class="play-bar">
+      <section class="play-bar has-fast-forward">
         <button id="clear-selection" class="ghost" ${hasSelection() ? "" : "disabled"}>Clear</button>
+        <button id="fast-forward" class="ghost fast-forward-button" aria-label="Fast forward" title="Fast forward" ${replayInProgress && !fastForwardReplay ? "" : "disabled"}>&gt;&gt;</button>
         <button id="confirm-play" ${canPlay && !actionInFlight && !replayInProgress ? "" : "disabled"}>${replayInProgress ? "Playing..." : actionInFlight ? "Playing..." : playButtonText(playableNoCardAction, finalAction)}</button>
       </section>
       ${renderFocusOverlay()}
       ${renderEndGameOverlay()}
     </main>
   `;
-  document.querySelector("#back-lobby")!.addEventListener("click", refresh);
   bindSoundToggle();
-  document.querySelector("#exit-game")!.addEventListener("click", confirmExitGame);
+  document.querySelector("#exit-game")!.addEventListener("click", () => {
+    playSelectionTick();
+    confirmExitGame();
+  });
   document.querySelector("#play-again")?.addEventListener("click", playAgain);
   document.querySelector("#clear-selection")!.addEventListener("click", () => {
+    playSelectionTick();
     clearSelection();
+    render();
+  });
+  document.querySelector("#fast-forward")?.addEventListener("click", () => {
+    playSelectionTick();
+    fastForwardReplay = true;
+    wakeFastForward();
     render();
   });
   document.querySelectorAll<HTMLButtonElement>(".card.selectable").forEach((button) => {
     button.addEventListener("click", () => {
+      playSelectionTick();
       const cardId = Number(button.dataset.cardId);
       if (selectedCardId === cardId) {
         clearSelection();
@@ -859,6 +973,7 @@ function renderGame() {
     button.addEventListener("click", () => {
       const pawnId = button.dataset.pawnId;
       if (!pawnId) return;
+      playSelectionTick();
       if (isCustomSevenMode(game)) {
         toggleSevenPawn(pawnId);
       } else if (selectedPawnIds.includes(pawnId)) {
@@ -872,6 +987,7 @@ function renderGame() {
   });
   document.querySelectorAll<HTMLButtonElement>(".choice-btn, .step-btn").forEach((button) => {
     button.addEventListener("click", () => {
+      playSelectionTick();
       const kind = button.dataset.kind;
       if (kind === "rank") {
         selectedRank = button.dataset.value || null;
@@ -906,6 +1022,7 @@ function renderGame() {
     const sevenAction = customSevenActionPayload(game);
     const action = playableNoCardAction || selectedPlayableAction(game);
     if (!action && !sevenAction) return;
+    playSelectionTick();
     if (action && !action.card && action.type !== "SkipTurnAction") optimisticHandCards = [];
     actionInFlight = true;
     render();
@@ -1097,6 +1214,15 @@ function replayPathTimingForEvent(event: TurnEvent) {
   return { stepDelayMs, stepDurationMs };
 }
 
+function scheduleReplayPathTicks(event: TurnEvent) {
+  if (!isReplayPathEvent(event)) return;
+  const count = event.action?.preview?.positions.length || 0;
+  const timing = replayPathTimingForEvent(event);
+  for (let index = 0; index < count; index += 1) {
+    window.setTimeout(() => playSound("selectionTick", 0.25), index * timing.stepDelayMs);
+  }
+}
+
 function emptyPreview(): PathPreview {
   return { positions: [], capturePawnIds: [], valid: true };
 }
@@ -1173,17 +1299,23 @@ function resetSevenPreviewCache() {
 
 function replaySettleDelay(event: TurnEvent) {
   const replayMultiplier = isReplayMovementEvent(event) ? 1.3 : 1;
+  const skipMultiplier = isFastNoMoveEvent(event) ? 0.7 : 1;
   const settleDelay = event.isBot ? (event.affectedPawns.length ? 1760 : 1460) : event.affectedPawns.length ? 760 : 460;
-  return Math.round(settleDelay * replayMultiplier);
+  return Math.round(settleDelay * replayMultiplier * skipMultiplier);
 }
 
 function replayAnticipationDelay(event: TurnEvent) {
   const replayMultiplier = isReplayMovementEvent(event) ? 1.3 : 1;
-  return Math.round((event.isBot ? 1520 : 360) * replayMultiplier);
+  const skipMultiplier = isFastNoMoveEvent(event) ? 0.7 : 1;
+  return Math.round((event.isBot ? 1520 : 360) * replayMultiplier * skipMultiplier);
 }
 
 function replayMoveAnimationDelay(event: TurnEvent) {
   return isReplayMovementEvent(event) ? 410 : 0;
+}
+
+function isFastNoMoveEvent(event: TurnEvent) {
+  return event.type === "SkipTurnAction" || event.type === "DiscardHandAction";
 }
 
 function replayAnimationsForEvent(event: TurnEvent): ReplayAnimationPawn[] {

@@ -1,4 +1,4 @@
-export type SoundName = "cardDeal" | "pawnMove" | "diceRoll" | "playCard";
+export type SoundName = "cardDeal" | "pawnMove" | "diceRoll" | "playCard" | "skipTurn" | "selectionTick" | "turnWhoosh";
 
 const SOUND_STORAGE_KEY = "brandi.soundEnabled";
 const soundFiles: Record<SoundName, string> = {
@@ -6,6 +6,9 @@ const soundFiles: Record<SoundName, string> = {
   pawnMove: "/sounds/pawn_movement.mp3",
   diceRoll: "/sounds/dice_roll.mp3",
   playCard: "/sounds/play_card.mp3",
+  skipTurn: "/sounds/skip_turn.mp3",
+  selectionTick: "/sounds/tick.mp3",
+  turnWhoosh: "/sounds/whoosh.mp3",
 };
 
 const audioCache = new Map<SoundName, HTMLAudioElement>();
@@ -41,11 +44,11 @@ export function preloadSounds() {
   (Object.keys(soundFiles) as SoundName[]).forEach((name) => audioFor(name).load());
 }
 
-export function playSound(name: SoundName) {
+export function playSound(name: SoundName, volumeScale = 1) {
   if (!enabled) return;
   const source = audioFor(name);
   const audio = source.cloneNode(true) as HTMLAudioElement;
-  audio.volume = source.volume;
+  audio.volume = Math.max(0, Math.min(1, source.volume * volumeScale));
   audio.play().catch(() => {
     // Browsers can reject playback until the user interacts with the page.
   });

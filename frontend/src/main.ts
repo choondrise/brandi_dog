@@ -767,6 +767,7 @@ function isPlayableViewerTurn(game: GamePayload) {
   );
 }
 
+
 function playTurnWhooshIfNeeded(game: GamePayload) {
   if (!isPlayableViewerTurn(game) || currentReplayEvent || replayInProgress || actionInFlight || endGameOverlay) return;
   const key = [gameId, game.dealRoundIndex, game.discardCount, game.drawCount, game.activePlayer].join(":");

@@ -1,17 +1,17 @@
 import "./styles.css";
-import rulesMarkdown from "./rules.md?raw";
 import { inject } from "@vercel/analytics";
 import { API_BASE, WS_BASE, createSession, getState, joinSession, playAction, playSevenSplit, previewSevenSplit, setBot, setSeat, startGame } from "./api";
 import { renderBoard, type PreviewPosition, type ReplayAnimationPawn } from "./board";
 import { renderTutorial, resetTutorial } from "./tutorial";
 import { playSound, soundEnabled, toggleSound } from "./sounds";
+import { getLanguage, languages, rulesMarkdown, setLanguage, t, type Language } from "./i18n";
 import type { ActionInfo, ActionPreview, AppPayload, BotLevel, CardInfo, GamePayload, PawnInfo, Seat, TurnEvent } from "./types";
 
 inject({ framework: "vite" });
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
 const seats: Seat[] = ["A1", "B1", "A2", "B2"];
-const botLevels: BotLevel[] = ["Idiot", "Easy", "Medium", "Hard", "Cheater"];
+const botLevels: BotLevel[] = ["Idiot", "Easy", "Medium", "Hard", "Very Hard", "Cheater"];
 
 let gameId = localStorage.getItem("brandi.gameId") || "";
 let token = localStorage.getItem("brandi.token") || "";
@@ -20,6 +20,8 @@ let state: AppPayload | null = null;
 let socket: WebSocket | null = null;
 let actionInFlight = false;
 let replayInProgress = false;
+let pendingSocketPayloads: AppPayload[] = [];
+let drainingSocketPayloads = false;
 let refreshVersion = 0;
 let replayPawns: PawnInfo[] | null = null;
 let replayBaseGame: GamePayload | null = null;
@@ -28,12 +30,17 @@ let replayEndpointEventId: string | null = null;
 let replayPathEventId: string | null = null;
 let replaySettleEventId: string | null = null;
 const AUTO_SKIP_STORAGE_KEY = "brandi.autoSkipAnimations";
+const HOME_INTRO_REPLAY_KEY = "brandi.homeIntroReplayOnLoad";
 let fastForwardReplay = false;
 let autoSkipAnimations = localStorage.getItem(AUTO_SKIP_STORAGE_KEY) === "1";
 let fastForwardWake: (() => void) | null = null;
 let lastTurnWhooshKey = "";
 let seenEventIds = new Set<string>();
 let currentView: "home" | "rules" | "tutorial" = "home";
+let homeIntroPlayed = false;
+let homeIntroReloadResetHandled = false;
+let homeIntroReplayRequested = sessionStorage.getItem(HOME_INTRO_REPLAY_KEY) === "1";
+sessionStorage.removeItem(HOME_INTRO_REPLAY_KEY);
 type FocusOverlay =
   | { kind: "swap"; card: CardInfo; title: string; text: string }
   | { kind: "deal"; count: number; title: string; text: string; rolling: boolean };
@@ -44,8 +51,23 @@ type EndGameOverlay = { gameId: string; outcome: "win" | "lose"; phase: "splash"
 let endGameOverlay: EndGameOverlay | null = null;
 let handledEndGameId = "";
 let endGameFlowInProgress = false;
+
+function isBrowserReload() {
+  const [navigation] = performance.getEntriesByType("navigation") as PerformanceNavigationTiming[];
+  return navigation?.type === "reload" || performance.navigation?.type === performance.navigation?.TYPE_RELOAD;
+}
+
+function resetHomeIntroForBrowserReload() {
+  if (homeIntroReloadResetHandled) return;
+  if (!homeIntroReplayRequested && !isBrowserReload()) return;
+  homeIntroPlayed = false;
+  homeIntroReplayRequested = false;
+  homeIntroReloadResetHandled = true;
+}
 type PathPreview = Pick<ActionPreview, "positions" | "capturePawnIds" | "valid">;
 const sevenPreviewCache = new Map<string, PathPreview>();
+const sevenRouteCache = new Map<string, PathPreview>();
+const pendingSevenRouteKeys = new Set<string>();
 let pendingSevenPreviewKey = "";
 let sevenPreviewTimer: number | null = null;
 
@@ -68,9 +90,28 @@ function saveIdentity(nextGameId: string, nextToken: string, nextHostToken = "")
   }
 }
 
-function confirmExitGame() {
-  if (window.confirm("Exit this game? You can rejoin later with the same game ID if the table is still running.")) {
-    clearIdentity();
+async function confirmExitGame() {
+  if (!window.confirm(t("confirm.exit"))) return;
+  await returnToNewLobby();
+}
+
+async function returnToNewLobby() {
+  if (actionInFlight) return;
+  actionInFlight = true;
+  render();
+  try {
+    const playerName = state?.viewerSeat ? state.session.seats[state.viewerSeat].human_name || t("home.namePlaceholder") : t("home.namePlaceholder");
+    const created = await createSession(playerName);
+    saveIdentity(created.game_id, created.player_token, created.host_token);
+    seenEventIds = new Set<string>();
+    actionInFlight = false;
+    await refresh();
+  } catch (error) {
+    actionInFlight = false;
+    toast(error);
+    render();
+  } finally {
+    actionInFlight = false;
   }
 }
 
@@ -84,6 +125,8 @@ function clearIdentity() {
   localStorage.removeItem("brandi.hostToken");
   socket?.close();
   socket = null;
+  pendingSocketPayloads = [];
+  drainingSocketPayloads = false;
   replayInProgress = false;
   replayPawns = null;
   replayBaseGame = null;
@@ -120,7 +163,7 @@ async function refresh() {
     if (version === refreshVersion) {
       if (error instanceof Error && error.message === "Unknown game id") {
         clearIdentity();
-        toast("That saved game is no longer available.");
+        toast(t("toast.savedGameGone"));
         return;
       }
       toast(error);
@@ -141,7 +184,11 @@ function connectSocket() {
       await refresh();
       return;
     }
-    if (payload.session && !replayInProgress && !actionInFlight) {
+    if (payload.session) {
+      if (replayInProgress || actionInFlight || drainingSocketPayloads) {
+        pendingSocketPayloads.push(payload);
+        return;
+      }
       await acceptPayload(payload, Boolean(payload.events?.length));
     }
   };
@@ -153,6 +200,19 @@ function connectSocket() {
 function disconnectSocket() {
   socket?.close();
   socket = null;
+}
+
+async function drainPendingSocketPayloads() {
+  if (drainingSocketPayloads || replayInProgress || actionInFlight) return;
+  drainingSocketPayloads = true;
+  try {
+    while (pendingSocketPayloads.length && !replayInProgress && !actionInFlight) {
+      const payload = pendingSocketPayloads.shift()!;
+      await acceptPayload(payload, Boolean(payload.events?.length));
+    }
+  } finally {
+    drainingSocketPayloads = false;
+  }
 }
 
 function render() {
@@ -179,8 +239,10 @@ function render() {
 }
 
 function renderHome() {
+  resetHomeIntroForBrowserReload();
+  const playIntro = !homeIntroPlayed;
   app.innerHTML = `
-    <main class="home home-intro">
+    <main class="home home-intro ${playIntro ? "" : "home-intro-complete"}">
       <section class="brand-panel">
         <h1 class="brand-title" aria-label="Brandi Dog">
           <span class="sr-only">Brandi Dog</span>
@@ -196,21 +258,22 @@ function renderHome() {
             <text class="brand-title-letter l9 reverse" x="128" y="178">g</text>
           </svg>
         </h1>
-        <p class="home-subtitle" aria-label="Start a table, share the game ID, fill empty seats with bots, and play from phone or desktop.">
-          <span>Start a table</span><span>share the game ID</span><span>fill empty seats with bots</span><span>and play from phone or desktop.</span>
+        <p class="home-subtitle" aria-label="${escapeHtml([t("home.subtitle.1"), t("home.subtitle.2"), t("home.subtitle.3"), t("home.subtitle.4")].join(", "))}">
+          <span>${escapeHtml(t("home.subtitle.1"))}</span><span>${escapeHtml(t("home.subtitle.2"))}</span><span>${escapeHtml(t("home.subtitle.3"))}</span><span>${escapeHtml(t("home.subtitle.4"))}</span>
         </p>
       </section>
       <div class="home-divider" aria-hidden="true"></div>
       <section class="entry-panel home-entry-panel">
-        <label>Your name<input id="name" autocomplete="name" maxlength="32" placeholder="Player" /></label>
-        <button id="create">Create game</button>
+        <label>${escapeHtml(t("home.name"))}<input id="name" autocomplete="name" maxlength="32" placeholder="${escapeHtml(t("home.namePlaceholder"))}" /></label>
+        <button id="create">${escapeHtml(t("home.create"))}</button>
         <div class="join-row">
-          <input id="game-id" maxlength="6" placeholder="GAME ID" />
-          <button id="join">Join</button>
+          <input id="game-id" maxlength="6" placeholder="${escapeHtml(t("home.gameIdPlaceholder"))}" />
+          <button id="join">${escapeHtml(t("home.join"))}</button>
         </div>
+        ${renderLanguagePicker()}
         <div class="home-link-row">
-          <button id="how-to-play" class="ghost">How to play</button>
-          <button id="tutorial-start" class="ghost">Tutorial (Beta)</button>
+          <button id="how-to-play" class="ghost">${escapeHtml(t("home.howToPlay"))}</button>
+          <button id="tutorial-start" class="ghost">${escapeHtml(t("home.tutorial"))}</button>
         </div>
       </section>
     </main>
@@ -224,9 +287,16 @@ function renderHome() {
     currentView = "tutorial";
     render();
   };
+  document.querySelectorAll<HTMLButtonElement>("[data-language]").forEach((button) => {
+    button.onclick = () => {
+      const language = button.dataset.language as Language;
+      setLanguage(language);
+      render();
+    };
+  });
   document.querySelector<HTMLButtonElement>("#create")!.onclick = async () => {
     try {
-      const name = inputValue("#name", "Host");
+      const name = inputValue("#name", t("home.namePlaceholder"));
       const created = await createSession(name);
       saveIdentity(created.game_id, created.player_token, created.host_token);
       await refresh();
@@ -238,28 +308,46 @@ function renderHome() {
   document.querySelector<HTMLButtonElement>("#join")!.onclick = async () => {
     try {
       const id = inputValue("#game-id", "").toUpperCase();
-      if (!id) throw new Error("Enter a game ID");
-      const joined = await joinSession(id, inputValue("#name", "Player"));
+      if (!id) throw new Error(t("toast.enterGameId"));
+      const joined = await joinSession(id, inputValue("#name", t("home.namePlaceholder")));
       saveIdentity(joined.game_id, joined.player_token);
       await refresh();
     } catch (error) {
       toast(error);
     }
   };
+  if (playIntro) homeIntroPlayed = true;
+}
+
+function renderLanguagePicker() {
+  const current = getLanguage();
+  return `
+    <div class="language-picker" aria-label="${escapeHtml(t("language.label"))}">
+      <span>${escapeHtml(t("language.label"))}</span>
+      <div class="language-options">
+        ${languages
+          .map(
+            (language) =>
+              `<button type="button" class="ghost language-option ${language.code === current ? "selected" : ""}" data-language="${language.code}" aria-pressed="${language.code === current}" aria-label="${escapeHtml(language.label)}" title="${escapeHtml(language.label)}"><span class="language-flag" aria-hidden="true">${language.flag}</span></button>`,
+          )
+          .join("")}
+      </div>
+    </div>
+  `;
 }
 
 function renderRules() {
   app.innerHTML = `
     <main class="rules-page">
       <header class="rules-header">
-        <button id="rules-back" class="ghost">Go back</button>
+        <button id="rules-back" class="ghost">${escapeHtml(t("rules.back"))}</button>
         <div>
-          <span class="eyebrow">Rules</span>
-          <strong>How to play Brandi Dog</strong>
+          <span class="eyebrow">${escapeHtml(t("rules.eyebrow"))}</span>
+          <strong>${escapeHtml(t("rules.title"))}</strong>
         </div>
       </header>
       <section class="rules-content">
-        ${renderRulesMarkdown(rulesMarkdown)}
+        ${renderRulesMarkdown(rulesMarkdown())}
       </section>
     </main>
   `;
@@ -322,20 +410,20 @@ function renderLobby() {
     <main class="lobby">
       <header class="topbar">
         <div>
-          <span class="eyebrow">Game ID</span>
+          <span class="eyebrow">${escapeHtml(t("lobby.gameId"))}</span>
           <button class="game-code" id="copy-code">${session.game_id}</button>
         </div>
         <div class="header-actions">
           ${renderSoundToggle()}
-          <button class="ghost" id="leave">Leave</button>
+          <button class="ghost" id="leave">${escapeHtml(t("lobby.leave"))}</button>
         </div>
       </header>
       <section class="seat-grid">
         ${seats.map((seat) => renderSeatCard(seat)).join("")}
       </section>
       <section class="lobby-actions">
-        <button id="start" ${state!.isHost ? "" : "disabled"}>Start game</button>
-        <p>${state!.isHost ? "Empty seats will use their selected bot." : "Waiting for host to start."}</p>
+        <button id="start" ${state!.isHost ? "" : "disabled"}>${escapeHtml(t("lobby.start"))}</button>
+        <p>${state!.isHost ? escapeHtml(t("lobby.hostHint")) : escapeHtml(t("lobby.guestHint"))}</p>
       </section>
     </main>
   `;
@@ -353,7 +441,7 @@ function bindLobbyEvents() {
   };
   document.querySelector<HTMLElement>("#start")!.onclick = async () => {
     try {
-      await acceptPayload(await startGame(gameId, hostToken || token), true);
+      await acceptPayload(await startGame(gameId, token || hostToken), true);
     } catch (error) {
       toast(error);
     }
@@ -377,7 +465,7 @@ function bindLobbyEvents() {
     if (botSelect) {
       botSelect.onchange = async (event) => {
         try {
-          const payload = await setBot(gameId, hostToken || token, seat, (event.target as HTMLSelectElement).value as BotLevel);
+          const payload = await setBot(gameId, token || hostToken, seat, (event.target as HTMLSelectElement).value as BotLevel);
           const previous = state;
           state = payload;
           if (previous && canPatchLobby(previous, payload)) patchLobby(previous, payload);
@@ -424,12 +512,12 @@ function patchSeatCard(seat: Seat) {
   card.classList.toggle("occupied", human);
 
   const occupant = card.querySelector<HTMLElement>("[data-seat-occupant]");
-  if (occupant) occupant.textContent = human ? info.human_name || "Player" : `${botLevelLabel(info.bot_level)} bot`;
+  if (occupant) occupant.textContent = human ? info.human_name || t("home.namePlaceholder") : t("lobby.botOccupant", { bot: botLevelLabel(info.bot_level) });
 
   const sitButton = card.querySelector<HTMLButtonElement>("[data-seat-button]");
   if (sitButton) {
     sitButton.disabled = human;
-    sitButton.textContent = mine ? "Your seat" : "Take seat";
+    sitButton.textContent = mine ? t("lobby.yourSeat") : t("lobby.takeSeat");
   }
 
   const botSelect = card.querySelector<HTMLSelectElement>("[data-seat-bot]");
@@ -447,12 +535,12 @@ function renderSeatCard(seat: Seat) {
     <article class="seat-card ${mine ? "mine" : ""} ${human ? "occupied" : ""}" data-seat-card="${seat}">
       <div class="seat-head">
         <strong>${seat}</strong>
-        <span>Team ${info.team}</span>
+        <span>${escapeHtml(t("lobby.team", { team: info.team }))}</span>
       </div>
-      <p class="occupant" data-seat-occupant>${human ? info.human_name : `${botLevelLabel(info.bot_level)} bot`}</p>
-      <button id="sit-${seat}" data-seat-button ${human ? "disabled" : ""}>${mine ? "Your seat" : "Take seat"}</button>
+      <p class="occupant" data-seat-occupant>${human ? escapeHtml(info.human_name || t("home.namePlaceholder")) : escapeHtml(t("lobby.botOccupant", { bot: botLevelLabel(info.bot_level) }))}</p>
+      <button id="sit-${seat}" data-seat-button ${human ? "disabled" : ""}>${mine ? escapeHtml(t("lobby.yourSeat")) : escapeHtml(t("lobby.takeSeat"))}</button>
       <label class="bot-select">
-        Bot
+        ${escapeHtml(t("lobby.bot"))}
         <select id="bot-${seat}" data-seat-bot ${state!.isHost && !human ? "" : "disabled"}>
           ${botLevels.map((level) => `<option value="${level}" ${info.bot_level === level ? "selected" : ""}>${botLevelLabel(level)}</option>`).join("")}
         </select>
@@ -474,6 +562,7 @@ async function acceptPayload(payload: AppPayload, replay = false) {
   state = payload;
   if (!replay && canPatchLobby(previousPayload, payload)) {
     patchLobby(previousPayload!, payload);
+    void drainPendingSocketPayloads();
     return;
   }
   if (!replay || !events.length || !payload.game) {
@@ -483,11 +572,13 @@ async function acceptPayload(payload: AppPayload, replay = false) {
     optimisticHandCards = null;
     render();
     void maybeStartEndGameFlow(payload);
+    void drainPendingSocketPayloads();
     return;
   }
   replayBaseGame = previousGame;
   await replayEvents(events, overlays, shouldPlayDealSound);
   void maybeStartEndGameFlow(payload);
+  void drainPendingSocketPayloads();
 }
 
 
@@ -516,8 +607,8 @@ function focusOverlaysForPayload(previousGame: GamePayload | null, payload: AppP
     overlays.push({
       kind: "swap",
       card: added[0],
-      title: "Card received",
-      text: `You received ${added[0].label} from your teammate.`,
+      title: t("game.cardReceived"),
+      text: t("game.receivedCard", { card: added[0].label }),
     });
   }
 
@@ -530,8 +621,8 @@ function focusOverlaysForPayload(previousGame: GamePayload | null, payload: AppP
     overlays.push({
       kind: "deal",
       count: nextGame.activeDealSize,
-      title: "New hand",
-      text: `${nextGame.activeDealSize} cards dealt. ${displaySeatName(nextGame.roundStarter)} plays first.`,
+      title: t("game.newHand"),
+      text: t("game.dealText", { count: nextGame.activeDealSize, player: displaySeatName(nextGame.roundStarter) }),
       rolling: true,
     });
   }
@@ -660,8 +751,8 @@ function renderTurnNotice(game: GamePayload) {
   return `
     <div class="replay-banner turn-notice human">
       <div>
-        <span>YOUR TURN</span>
-        <strong>Pick a card to play</strong>
+        <span>${escapeHtml(t("game.yourTurn"))}</span>
+        <strong>${escapeHtml(t("game.pickCard"))}</strong>
       </div>
     </div>
   `;
@@ -692,7 +783,7 @@ function renderReplayBanner() {
     <div class="replay-banner ${currentReplayEvent.isBot ? "bot" : "human"}">
       ${card}
       <div>
-        <span>${currentReplayEvent.isBot ? "Bot move" : "Your move"}</span>
+        <span>${currentReplayEvent.isBot ? escapeHtml(t("game.botMove")) : escapeHtml(t("game.yourMove"))}</span>
         <strong>${actor}</strong>
         ${renderEventLabel(currentReplayEvent)}
       </div>
@@ -704,18 +795,18 @@ function renderEventLabel(event: TurnEvent) {
   const action = event.action;
   if (!action) return `<p>${renderLabelWithPawnBadges(event.label)}</p>`;
   if (action.type === "PlayEnterAction" && action.pawns[0]) {
-    return `<p>Enter ${renderActionPawnBadge(action.pawns[0])}</p>`;
+    return `<p>${escapeHtml(t("game.enter"))} ${renderActionPawnBadge(action.pawns[0])}</p>`;
   }
   if (action.type === "PlayStepCardAction" && action.pawns[0]) {
     const sign = action.direction === "BACKWARD" ? "-" : "+";
-    return `<p>Move ${renderActionPawnBadge(action.pawns[0])} ${sign}${action.steps}</p>`;
+    return `<p>${escapeHtml(t("game.move"))} ${renderActionPawnBadge(action.pawns[0])} ${sign}${action.steps}</p>`;
   }
   if (action.type === "PlayJackSwapAction" && action.pawns[0] && action.pawns[1]) {
-    return `<p>Swap ${renderActionPawnBadge(action.pawns[0])} with ${renderActionPawnBadge(action.pawns[1])}</p>`;
+    return `<p>${escapeHtml(t("game.swap"))} ${renderActionPawnBadge(action.pawns[0])} ${escapeHtml(t("game.with"))} ${renderActionPawnBadge(action.pawns[1])}</p>`;
   }
   if (action.type === "PlaySevenSplitAction") {
     const moves = action.moves.map((move) => `${renderActionPawnBadge(move.pawn)} +${move.steps}`).join(" ");
-    return `<p>Split ${moves}</p>`;
+    return `<p>${escapeHtml(t("game.split"))} ${moves}</p>`;
   }
   return `<p>${renderLabelWithPawnBadges(event.label)}</p>`;
 }
@@ -764,7 +855,7 @@ function wakeFastForward() {
 function renderSoundToggle() {
   const enabled = soundEnabled();
   return `
-    <button type="button" class="ghost sound-toggle" id="sound-toggle" aria-pressed="${enabled}" aria-label="${enabled ? "Sound on" : "Sound off"}" title="${enabled ? "Sound on" : "Sound off"}">
+    <button type="button" class="ghost sound-toggle" id="sound-toggle" aria-pressed="${enabled}" aria-label="${enabled ? escapeHtml(t("game.soundOn")) : escapeHtml(t("game.soundOff"))}" title="${enabled ? escapeHtml(t("game.soundOn")) : escapeHtml(t("game.soundOff"))}">
       <span class="sound-icon" aria-hidden="true">${enabled ? soundOnIcon() : soundOffIcon()}</span>
     </button>
   `;
@@ -789,7 +880,7 @@ function bindSoundToggle() {
 
 function renderAutoSkipToggle() {
   return `
-    <button type="button" class="ghost auto-skip-toggle" id="auto-skip-toggle" aria-pressed="${autoSkipAnimations}" aria-label="${autoSkipAnimations ? "Always skip animations" : "Play animations"}" title="${autoSkipAnimations ? "Always skip animations" : "Play animations"}">
+    <button type="button" class="ghost auto-skip-toggle" id="auto-skip-toggle" aria-pressed="${autoSkipAnimations}" aria-label="${autoSkipAnimations ? escapeHtml(t("game.skipAnimations")) : escapeHtml(t("game.playAnimations"))}" title="${autoSkipAnimations ? escapeHtml(t("game.skipAnimations")) : escapeHtml(t("game.playAnimations"))}">
       &gt;&gt;
     </button>
   `;
@@ -846,12 +937,12 @@ function renderFocusOverlay() {
 function renderEndGameOverlay() {
   if (!endGameOverlay) return "";
   const won = endGameOverlay.outcome === "win";
-  const resultWord = won ? "WIN" : "LOSE";
-  const button = endGameOverlay.phase === "prompt" ? `<button id="play-again" type="button">Play again</button>` : `<div class="endgame-button-placeholder" aria-hidden="true"></div>`;
+  const resultWord = won ? t("game.win") : t("game.lose");
+  const button = endGameOverlay.phase === "prompt" ? `<button id="play-again" type="button">${escapeHtml(t("game.playAgain"))}</button>` : `<div class="endgame-button-placeholder" aria-hidden="true"></div>`;
   return `
     <div class="endgame-overlay ${endGameOverlay.phase}">
       <div class="endgame-dialog ${won ? "win" : "lose"}">
-        <strong class="endgame-title"><span>YOU</span><span>${resultWord}</span></strong>
+        <strong class="endgame-title"><span>${escapeHtml(t("game.you"))}</span><span>${escapeHtml(resultWord)}</span></strong>
         ${button}
       </div>
     </div>
@@ -859,23 +950,7 @@ function renderEndGameOverlay() {
 }
 
 async function playAgain() {
-  if (actionInFlight) return;
-  actionInFlight = true;
-  render();
-  try {
-    const playerName = state?.viewerSeat ? state.session.seats[state.viewerSeat].human_name || "Player" : "Player";
-    const created = await createSession(playerName);
-    saveIdentity(created.game_id, created.player_token, created.host_token);
-    seenEventIds = new Set<string>();
-    actionInFlight = false;
-    await refresh();
-  } catch (error) {
-    actionInFlight = false;
-    toast(error);
-    render();
-  } finally {
-    actionInFlight = false;
-  }
+  await returnToNewLobby();
 }
 
 function renderGame() {
@@ -903,14 +978,14 @@ function renderGame() {
     <main class="game">
       <header class="game-status">
         <div>
-          <span class="eyebrow">${game.phase.replace("_", " ")}</span>
-          <strong>${game.winner ? `Team ${game.winner} wins` : game.activePlayer ? `${displaySeatName(game.activePlayer)} to move` : "Game over"}</strong>
-          ${game.phase === "TEAM_SWAPS" ? `<p class="round-note">First to play: ${displaySeatName(game.roundStarter)} - ${game.activeDealSize} cards</p>` : ""}
+          <span class="eyebrow">${escapeHtml(phaseLabel(game.phase))}</span>
+          <strong>${game.winner ? escapeHtml(t("game.teamWins", { team: game.winner })) : game.activePlayer ? escapeHtml(t("game.toMove", { player: displaySeatName(game.activePlayer) })) : escapeHtml(t("game.over"))}</strong>
+          ${game.phase === "TEAM_SWAPS" ? `<p class="round-note">${escapeHtml(t("game.firstToPlay", { player: displaySeatName(game.roundStarter), count: game.activeDealSize }))}</p>` : ""}
         </div>
         <div class="header-actions">
           ${renderSoundToggle()}
           ${renderAutoSkipToggle()}
-          <button class="ghost exit-button" id="exit-game">Exit</button>
+          <button class="ghost exit-button" id="exit-game">${escapeHtml(t("game.exit"))}</button>
         </div>
       </header>
       <section class="table-area">
@@ -920,16 +995,16 @@ function renderGame() {
       </section>
       <section class="hand-tray">
         <div class="hand-header">
-          <strong>Your hand</strong>
-          <span>${hand.length} cards</span>
+          <strong>${escapeHtml(t("game.yourHand"))}</strong>
+          <span>${escapeHtml(t("game.cardCount", { count: hand.length }))}</span>
         </div>
-        <div class="cards">${hand.map((card) => renderCard(card, !replayInProgress && cardPlayable(game, card.id), selectedCardId === card.id)).join("") || `<span class="muted">No visible cards</span>`}</div>
-        ${replayInProgress ? `<div class="selection-panel"><p class="muted">Resolving moves before the next hand is dealt.</p></div>` : renderSelectionControls(game, actionOptions)}
+        <div class="cards">${hand.map((card) => renderCard(card, !replayInProgress && cardPlayable(game, card.id), selectedCardId === card.id)).join("") || `<span class="muted">${escapeHtml(t("game.noVisibleCards"))}</span>`}</div>
+        ${replayInProgress ? `<div class="selection-panel"><p class="muted">${escapeHtml(t("game.resolving"))}</p></div>` : renderSelectionControls(game, actionOptions)}
       </section>
       <section class="play-bar has-fast-forward">
-        <button id="clear-selection" class="ghost" ${hasSelection() ? "" : "disabled"}>Clear</button>
-        <button id="fast-forward" class="ghost fast-forward-button" aria-label="Fast forward" title="Fast forward" ${replayInProgress && !fastForwardReplay ? "" : "disabled"}>&gt;&gt;</button>
-        <button id="confirm-play" ${canPlay && !actionInFlight && !replayInProgress ? "" : "disabled"}>${replayInProgress ? "Playing..." : actionInFlight ? "Playing..." : playButtonText(playableNoCardAction, finalAction)}</button>
+        <button id="clear-selection" class="ghost" ${hasSelection() ? "" : "disabled"}>${escapeHtml(t("game.clear"))}</button>
+        <button id="fast-forward" class="ghost fast-forward-button" aria-label="${escapeHtml(t("game.fastForward"))}" title="${escapeHtml(t("game.fastForward"))}" ${replayInProgress && !fastForwardReplay ? "" : "disabled"}>&gt;&gt;</button>
+        <button id="confirm-play" ${canPlay && !actionInFlight && !replayInProgress ? "" : "disabled"}>${replayInProgress ? escapeHtml(t("game.playing")) : actionInFlight ? escapeHtml(t("game.playing")) : escapeHtml(playButtonText(playableNoCardAction, finalAction))}</button>
       </section>
       ${renderFocusOverlay()}
       ${renderEndGameOverlay()}
@@ -938,7 +1013,7 @@ function renderGame() {
   bindSoundToggle();
   document.querySelector("#exit-game")!.addEventListener("click", () => {
     playSelectionTick();
-    confirmExitGame();
+    void confirmExitGame();
   });
   document.querySelector("#play-again")?.addEventListener("click", playAgain);
   document.querySelector("#clear-selection")!.addEventListener("click", () => {
@@ -1014,6 +1089,9 @@ function renderGame() {
       if (kind === "seven-step") {
         setSevenMoveSteps(Number(button.dataset.index), Number(button.dataset.value));
       }
+      if (kind === "seven-route") {
+        setSevenMoveRoute(Number(button.dataset.index), button.dataset.value !== "track");
+      }
       render();
     });
   });
@@ -1040,6 +1118,7 @@ function renderGame() {
     } finally {
       actionInFlight = false;
       if (!replayInProgress) render();
+      void drainPendingSocketPayloads();
     }
   });
 }
@@ -1049,7 +1128,7 @@ let selectedRank: string | null = null;
 let selectedVariant: string | null = null;
 let selectedPawnIds: string[] = [];
 let selectedSevenActionId: number | null = null;
-type SevenDraftMove = { pawnId: string; steps: number | null };
+type SevenDraftMove = { pawnId: string; steps: number | null; preferSafeEntry: boolean };
 let selectedSevenMoves: SevenDraftMove[] = [];
 
 function normalizeSelection(game: GamePayload, hand: CardInfo[]) {
@@ -1127,19 +1206,23 @@ function toggleSevenPawn(pawnId: string) {
     selectedSevenMoves = selectedSevenMoves.filter((move) => move.pawnId !== pawnId);
     return;
   }
-  selectedSevenMoves = [...selectedSevenMoves, { pawnId, steps: null }];
+  selectedSevenMoves = [...selectedSevenMoves, { pawnId, steps: null, preferSafeEntry: true }];
 }
 
 function setSevenMoveSteps(index: number, steps: number) {
-  selectedSevenMoves = selectedSevenMoves.map((move, moveIndex) => (moveIndex === index ? { ...move, steps } : move));
+  selectedSevenMoves = selectedSevenMoves.map((move, moveIndex) => (moveIndex === index ? { ...move, steps, preferSafeEntry: true } : move));
   normalizeSevenSteps();
+}
+
+function setSevenMoveRoute(index: number, preferSafeEntry: boolean) {
+  selectedSevenMoves = selectedSevenMoves.map((move, moveIndex) => (moveIndex === index ? { ...move, preferSafeEntry } : move));
 }
 
 function normalizeSevenSteps() {
   let total = 0;
   selectedSevenMoves = selectedSevenMoves.map((move) => {
     if (move.steps === null) return move;
-    if (total + move.steps > 7) return { ...move, steps: null };
+    if (total + move.steps > 7) return { ...move, steps: null, preferSafeEntry: true };
     total += move.steps;
     return move;
   });
@@ -1150,16 +1233,13 @@ function customSevenActionReady(game: GamePayload) {
 }
 
 function customSevenActionPayload(game: GamePayload) {
-  if (!isCustomSevenMode(game) || selectedCardId === null) return null;
-  if (!selectedSevenMoves.length || selectedSevenMoves.some((move) => move.steps === null)) return null;
-  const total = selectedSevenMoves.reduce((sum, move) => sum + (move.steps || 0), 0);
-  if (total !== 7) return null;
-  const representedRank = variantFilteredActions(game).find((action) => action.type === "PlaySevenSplitAction")?.representedRank || "7";
-  return {
-    cardId: selectedCardId,
-    representedRank,
-    moves: selectedSevenMoves.map((move) => ({ pawn_id: move.pawnId, steps: move.steps!, prefer_safe_entry: true })),
-  };
+  const payload = customSevenPreviewPayload(game);
+  if (!payload) return null;
+  const total = payload.moves.reduce((sum, move) => sum + move.steps, 0);
+  if (total !== 7 || payload.moves.length !== selectedSevenMoves.length) return null;
+  const cached = sevenPreviewCache.get(sevenPreviewCacheKey(game, payload));
+  if (!cached?.valid) return null;
+  return payload;
 }
 
 function selectedPlayableAction(game: GamePayload) {
@@ -1252,8 +1332,8 @@ function customSevenPreview(game: GamePayload): PathPreview {
 function customSevenPreviewPayload(game: GamePayload) {
   if (!isCustomSevenMode(game) || selectedCardId === null || !token) return null;
   const moves = selectedSevenMoves
-    .filter((move): move is { pawnId: string; steps: number } => move.steps !== null)
-    .map((move) => ({ pawn_id: move.pawnId, steps: move.steps, prefer_safe_entry: true }));
+    .filter((move): move is { pawnId: string; steps: number; preferSafeEntry: boolean } => move.steps !== null)
+    .map((move) => ({ pawn_id: move.pawnId, steps: move.steps, prefer_safe_entry: move.preferSafeEntry }));
   if (!moves.length) return null;
   const representedRank = variantFilteredActions(game).find((action) => action.type === "PlaySevenSplitAction")?.representedRank || "7";
   return { cardId: selectedCardId, representedRank, moves };
@@ -1290,8 +1370,73 @@ function rememberSevenPreview(key: string, preview: PathPreview) {
   }
 }
 
+function sevenRoutePreviewPayload(game: GamePayload, index: number, preferSafeEntry: boolean) {
+  if (!isCustomSevenMode(game) || selectedCardId === null || !token) return null;
+  const selected = selectedSevenMoves[index];
+  if (!selected || selected.steps === null) return null;
+  const moves = selectedSevenMoves.slice(0, index + 1);
+  if (moves.some((move) => move.steps === null)) return null;
+  const representedRank = variantFilteredActions(game).find((action) => action.type === "PlaySevenSplitAction")?.representedRank || "7";
+  return {
+    cardId: selectedCardId,
+    representedRank,
+    moves: moves.map((move, moveIndex) => ({
+      pawn_id: move.pawnId,
+      steps: move.steps!,
+      prefer_safe_entry: moveIndex === index ? preferSafeEntry : move.preferSafeEntry,
+    })),
+  };
+}
+
+function sevenRouteCacheKey(game: GamePayload, index: number, preferSafeEntry: boolean) {
+  const payload = sevenRoutePreviewPayload(game, index, preferSafeEntry);
+  return payload ? `route:${index}:${sevenPreviewCacheKey(game, payload)}` : "";
+}
+
+function sevenRoutePreview(game: GamePayload, index: number, preferSafeEntry: boolean) {
+  const payload = sevenRoutePreviewPayload(game, index, preferSafeEntry);
+  if (!payload) return null;
+  const key = sevenRouteCacheKey(game, index, preferSafeEntry);
+  const cached = sevenRouteCache.get(key);
+  if (cached) return cached;
+  scheduleSevenRoutePreview(key, gameId, token, payload);
+  return null;
+}
+
+function routeChoiceAvailable(safePreview: PathPreview | null, trackPreview: PathPreview | null) {
+  return Boolean(safePreview?.valid && trackPreview?.valid && previewSignature(safePreview) !== previewSignature(trackPreview));
+}
+
+function previewSignature(preview: PathPreview) {
+  const positions = preview.positions.map((position) => `${position.kind}:${position.owner || ""}:${position.index ?? ""}`).join("|");
+  const captures = [...preview.capturePawnIds].sort().join("|");
+  return `${positions};${captures}`;
+}
+
+function scheduleSevenRoutePreview(key: string, requestGameId: string, requestToken: string, payload: NonNullable<ReturnType<typeof sevenRoutePreviewPayload>>) {
+  if (!key || pendingSevenRouteKeys.has(key)) return;
+  pendingSevenRouteKeys.add(key);
+  void previewSevenSplit(requestGameId, requestToken, payload.cardId, payload.representedRank, payload.moves)
+    .then((preview) => {
+      sevenRouteCache.set(key, preview);
+    })
+    .catch(() => {
+      sevenRouteCache.set(key, { positions: [], capturePawnIds: [], valid: false });
+    })
+    .finally(() => {
+      pendingSevenRouteKeys.delete(key);
+      if (sevenRouteCache.size > 80) {
+        const oldest = sevenRouteCache.keys().next().value;
+        if (oldest) sevenRouteCache.delete(oldest);
+      }
+      if (gameId === requestGameId && token === requestToken) render();
+    });
+}
+
 function resetSevenPreviewCache() {
   sevenPreviewCache.clear();
+  sevenRouteCache.clear();
+  pendingSevenRouteKeys.clear();
   pendingSevenPreviewKey = "";
   if (sevenPreviewTimer !== null) window.clearTimeout(sevenPreviewTimer);
   sevenPreviewTimer = null;
@@ -1345,23 +1490,23 @@ function isReplayPathEvent(event: TurnEvent | null) {
 
 function renderSelectionControls(game: GamePayload, options: ReturnType<typeof selectionOptions>) {
   if (selectedCardId === null && !noCardAction(game)) {
-    return `<div class="selection-panel"><p class="muted">Select a card to begin.</p></div>`;
+    return `<div class="selection-panel"><p class="muted">${escapeHtml(t("selection.selectCard"))}</p></div>`;
   }
   if (noCardAction(game)) {
-    return `<div class="selection-panel"><p class="muted">No card play is available. Confirm to continue.</p></div>`;
+    return `<div class="selection-panel"><p class="muted">${escapeHtml(t("selection.noCard"))}</p></div>`;
   }
   const parts: string[] = [];
   if (options.rankOptions.length > 1) {
     parts.push(renderJokerRankSelector(options.rankOptions));
   }
   if (options.variantOptions.length > 1 && (options.rankOptions.length <= 1 || selectedRank)) {
-    parts.push(renderChoiceGroup("Choose how to play it", "variant", options.variantOptions, selectedVariant, variantLabel));
+    parts.push(renderChoiceGroup(t("selection.chooseHow"), "variant", options.variantOptions, selectedVariant, variantLabel));
   }
   const actions = variantFilteredActions(game);
   if (actions.some((action) => action.type === "PlaySevenSplitAction")) {
     parts.push(renderSevenBuilder(game));
   } else if (actions.some((action) => action.type !== "SwapCardAction")) {
-    parts.push(`<p class="muted">Select the involved figure${actions.some((action) => action.type === "PlayJackSwapAction") ? "s" : ""} on the board.</p>`);
+    parts.push(`<p class="muted">${escapeHtml(t("selection.involvedFigures", { plural: actions.some((action) => action.type === "PlayJackSwapAction") ? 1 : 0 }))}</p>`);
   }
   return `<div class="selection-panel">${parts.join("")}</div>`;
 }
@@ -1374,6 +1519,7 @@ function renderSevenBuilder(game: GamePayload) {
     if (!pawn) return "";
     const otherTotal = selectedSevenMoves.reduce((sum, other, otherIndex) => sum + (otherIndex === index ? 0 : other.steps || 0), 0);
     const maxForMove = 7 - otherTotal;
+    const routeControls = renderSevenRouteControls(game, move, index);
     return `
       <div class="seven-move">
         <div class="seven-move-head">
@@ -1385,17 +1531,34 @@ function renderSevenBuilder(game: GamePayload) {
             .map((step) => `<button type="button" class="step-btn ${move.steps === step ? "selected" : ""}" data-kind="seven-step" data-index="${index}" data-value="${step}" ${step > maxForMove ? "disabled" : ""}>${step}</button>`)
             .join("")}
         </div>
+        ${routeControls}
       </div>
     `;
   });
   return `
     <div class="seven-builder">
       <div class="seven-summary">
-        <span>Select figures in move order</span>
+        <span>${escapeHtml(t("selection.selectFiguresOrder"))}</span>
         <strong>${total}/7</strong>
       </div>
-      ${parts.length ? parts.join("") : `<p class="muted">Tap the figures on the board in the order they should move.</p>`}
-      ${remaining < 0 ? `<p class="muted">The split must total exactly 7.</p>` : remaining > 0 ? `<p class="muted">${remaining} step${remaining === 1 ? "" : "s"} remaining.</p>` : `<p class="muted">Ready to play this split.</p>`}
+      ${parts.length ? parts.join("") : `<p class="muted">${escapeHtml(t("selection.tapFiguresOrder"))}</p>`}
+      ${remaining < 0 ? `<p class="muted">${escapeHtml(t("selection.splitExact"))}</p>` : remaining > 0 ? `<p class="muted">${escapeHtml(t("selection.stepsRemaining", { count: remaining }))}</p>` : `<p class="muted">${escapeHtml(t("selection.splitReady"))}</p>`}
+    </div>
+  `;
+}
+
+function renderSevenRouteControls(game: GamePayload, move: SevenDraftMove, index: number) {
+  if (move.steps === null) return "";
+  const safePreview = sevenRoutePreview(game, index, true);
+  const trackPreview = sevenRoutePreview(game, index, false);
+  if (!routeChoiceAvailable(safePreview, trackPreview)) return "";
+  return `
+    <div class="seven-route-options">
+      <span>${escapeHtml(t("selection.routeChoice"))}</span>
+      <div class="seven-route-buttons">
+        <button type="button" class="choice-btn ${move.preferSafeEntry ? "selected" : ""}" data-kind="seven-route" data-index="${index}" data-value="safe">${escapeHtml(t("selection.routeSafe"))}</button>
+        <button type="button" class="choice-btn ${!move.preferSafeEntry ? "selected" : ""}" data-kind="seven-route" data-index="${index}" data-value="track">${escapeHtml(t("selection.routeTrack"))}</button>
+      </div>
     </div>
   `;
 }
@@ -1408,15 +1571,15 @@ function renderJokerRankSelector(values: string[]) {
   if (selectedRank) {
     return `
       <div class="joker-value-selected">
-        <span>Joker value</span>
+        <span>${escapeHtml(t("selection.jokerValue"))}</span>
         <strong>${rankLabel(selectedRank)}</strong>
-        <button type="button" class="choice-btn" data-kind="reset-rank">Change Joker value</button>
+        <button type="button" class="choice-btn" data-kind="reset-rank">${escapeHtml(t("selection.changeJoker"))}</button>
       </div>
     `;
   }
   return `
     <div class="joker-value-picker">
-      <span>Choose Joker value</span>
+      <span>${escapeHtml(t("selection.chooseJoker"))}</span>
       <div class="joker-rank-grid ${values.length > 7 ? "two-rows" : "one-row"}">
         ${values.map((value) => `<button type="button" class="step-btn joker-rank-btn" data-kind="rank" data-value="${value}">${rankLabel(value)}</button>`).join("")}
       </div>
@@ -1429,10 +1592,10 @@ function renderChoiceGroup(title: string, kind: string, values: string[], select
 }
 
 function playButtonText(noCard: ActionInfo | null, action: ActionInfo | null) {
-  if (noCard) return noCard.type === "SkipTurnAction" ? "Skip" : "Discard hand";
-  if (!action) return "Play";
-  if (action.type === "SwapCardAction") return "Swap card";
-  return "Play";
+  if (noCard) return noCard.type === "SkipTurnAction" ? t("game.skip") : t("game.discardHand");
+  if (!action) return t("game.play");
+  if (action.type === "SwapCardAction") return t("game.swapCard");
+  return t("game.play");
 }
 
 function actionVariantKey(action: ActionInfo) {
@@ -1445,13 +1608,13 @@ function actionVariantKey(action: ActionInfo) {
 }
 
 function variantLabel(value: string) {
-  if (value === "enter") return "Enter pawn";
-  if (value === "jack") return "Jack swap";
-  if (value === "seven") return "Split 7";
-  if (value === "swap") return "Swap with teammate";
+  if (value === "enter") return t("variant.enter");
+  if (value === "jack") return t("variant.jack");
+  if (value === "seven") return t("variant.seven");
+  if (value === "swap") return t("variant.swap");
   const [, direction, steps, preferSafe] = value.split(":");
-  if (direction === "BACKWARD") return `Move -${steps}`;
-  return preferSafe === "false" ? `Move +${steps} on track` : `Move +${steps}`;
+  if (direction === "BACKWARD") return t("variant.moveBackward", { steps });
+  return preferSafe === "false" ? t("variant.moveForwardTrack", { steps }) : t("variant.moveForward", { steps });
 }
 
 function botLevelLabel(level: BotLevel) {
@@ -1461,7 +1624,15 @@ function botLevelLabel(level: BotLevel) {
 }
 
 function rankLabel(value: string) {
-  return value === "JK" ? "Joker" : value;
+  if (value === "JK") return t("rank.joker");
+  if (value === "A") return t("rank.ace");
+  return value;
+}
+
+function phaseLabel(phase: GamePayload["phase"]) {
+  if (phase === "TEAM_SWAPS") return t("variant.swap");
+  if (phase === "PLAY_LOOP") return t("game.play");
+  return t("game.over");
 }
 
 function normalizedPawnSet(ids: string[]) {
@@ -1480,7 +1651,7 @@ function escapeHtml(value: string) {
 }
 
 function displaySeatName(seat: Seat) {
-  return escapeHtml(state?.session.seats[seat].human_name || seat);
+  return state?.session.seats[seat].human_name || seat;
 }
 
 function boardSeatLabels(): Partial<Record<Seat, string>> {
@@ -1506,14 +1677,37 @@ function inputValue(selector: string, fallback: string) {
   return document.querySelector<HTMLInputElement>(selector)?.value.trim() || fallback;
 }
 
+function localizedErrorMessage(message: string) {
+  const keys: Record<string, string> = {
+    "Seat is already taken": "error.seatTaken",
+    "At least one human must take a seat before starting": "error.needHumanSeat",
+    "Game is over": "error.gameOver",
+    "It is not your turn": "error.notYourTurn",
+    "Invalid action": "error.invalidAction",
+    "Selected move is no longer legal. Refresh and choose again.": "error.moveNoLongerLegal",
+    "Session is no longer in the lobby": "error.lobbyClosed",
+    "Game has not started": "error.notStarted",
+    "Only the host can do that": "error.hostOnly",
+    "Unknown player token": "error.unknownToken",
+    "Seat must be A1, B1, A2, or B2": "error.invalidSeat",
+    "Unknown game id": "toast.savedGameGone",
+  };
+  return keys[message] ? t(keys[message]) : message;
+}
+
 function toast(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
+  const rawMessage = error instanceof Error ? error.message : String(error);
+  const message = localizedErrorMessage(rawMessage);
   const node = document.createElement("div");
   node.className = "toast";
   node.textContent = message;
   document.body.appendChild(node);
   setTimeout(() => node.remove(), 3200);
 }
+
+window.addEventListener("pagehide", () => {
+  sessionStorage.setItem(HOME_INTRO_REPLAY_KEY, "1");
+});
 
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) {
@@ -1529,7 +1723,11 @@ window.addEventListener("focus", () => {
   if (!document.hidden) void refresh();
 });
 
-window.addEventListener("pageshow", () => {
+window.addEventListener("pageshow", (event) => {
+  if (event.persisted) {
+    homeIntroReloadResetHandled = false;
+    resetHomeIntroForBrowserReload();
+  }
   if (!document.hidden) void refresh();
 });
 

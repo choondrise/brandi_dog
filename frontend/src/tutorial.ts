@@ -1,5 +1,6 @@
 import { renderBoard, type PreviewPosition } from "./board";
 import type { CardInfo, PawnInfo, Seat } from "./types";
+import { t, tutorialStepText } from "./i18n";
 
 type TutorialTarget = "board" | "hand" | "controls" | "play" | "card" | "pawn" | "option" | "steps" | "none";
 type TutorialAction =
@@ -28,7 +29,6 @@ type TutorialState = {
 };
 
 const seats: Seat[] = ["A1", "B1", "A2", "B2"];
-const seatLabels: Partial<Record<Seat, string>> = { A1: "Partner", B1: "Opponent", A2: "You", B2: "Opponent" };
 const colors: Record<Seat, string> = { A1: "#d9443f", B1: "#239a59", A2: "#315fcb", B2: "#d4ae1f" };
 
 let state: TutorialState = initialState();
@@ -183,6 +183,7 @@ export function resetTutorial() {
 export function renderTutorial(root: HTMLElement, onExit: () => void) {
   const step = steps[state.stepIndex];
   const scenario = scenarioFor(step.scenario);
+  const stepText = tutorialStepText(state.stepIndex);
   const activePlayer = step.scenario === "tour" ? "A2" : "A2";
   const selectedPawns = selectedPawnIdsFor(step);
   const selectablePawns = selectablePawnIdsFor(step);
@@ -193,29 +194,29 @@ export function renderTutorial(root: HTMLElement, onExit: () => void) {
   root.innerHTML = `
     <main class="${pageClasses}">
       <header class="tutorial-header">
-        <button id="tutorial-exit" class="ghost">Go back</button>
+        <button id="tutorial-exit" class="ghost">${escapeHtml(t("tutorial.back"))}</button>
       </header>
       <section class="${tableClasses}">
-        ${renderBoard(scenario.pawns, activePlayer, seatLabels, selectedPawns, selectablePawns, [], preview.positions, preview.capturePawnIds)}
+        ${renderBoard(scenario.pawns, activePlayer, tutorialSeatLabels(), selectedPawns, selectablePawns, [], preview.positions, preview.capturePawnIds)}
       </section>
       <section class="tutorial-hand hand-tray ${targetClass(step, "hand")} ${targetClass(step, "card")}">
-        <div class="hand-header"><strong>Your hand</strong><span>${scenario.cards.length} cards</span></div>
+        <div class="hand-header"><strong>${escapeHtml(t("tutorial.hand"))}</strong><span>${escapeHtml(t("tutorial.cards", { count: scenario.cards.length }))}</span></div>
         <div class="cards">${scenario.cards.map((card) => renderTutorialCard(card, cardSelectable(step, card.id), state.selectedCardId === card.id)).join("")}</div>
         <div class="tutorial-controls selection-panel ${targetClass(step, "controls")} ${targetClass(step, "option")} ${targetClass(step, "steps")}">
           ${renderTutorialControls(step)}
         </div>
       </section>
       <section class="tutorial-play play-bar ${targetClass(step, "play")}">
-        <button id="tutorial-back" class="ghost" ${state.stepIndex === 0 ? "disabled" : ""}>Back</button>
-        <button id="tutorial-play" ${canTutorialPlay(step) ? "" : "disabled"}>${state.stepIndex === steps.length - 1 ? "Finish" : playLabel(step)}</button>
+        <button id="tutorial-back" class="ghost" ${state.stepIndex === 0 ? "disabled" : ""}>${escapeHtml(t("tutorial.backButton"))}</button>
+        <button id="tutorial-play" ${canTutorialPlay(step) ? "" : "disabled"}>${state.stepIndex === steps.length - 1 ? escapeHtml(t("tutorial.finish")) : escapeHtml(playLabel(step))}</button>
       </section>
       <div class="tutorial-scrim"></div>
       <aside class="tutorial-card-panel tutorial-panel-${panelPlacement(step)}">
         <div class="tutorial-progress"><span>${state.stepIndex + 1}</span><i style="--tutorial-progress:${((state.stepIndex + 1) / steps.length) * 100}%"></i><span>${steps.length}</span></div>
-        <h2>${escapeHtml(step.title)}</h2>
-        <p>${escapeHtml(step.body)}</p>
+        <h2>${escapeHtml(stepText.title)}</h2>
+        <p>${escapeHtml(stepText.body)}</p>
         <div class="tutorial-panel-actions">
-          <button id="tutorial-next" ${step.action.type === "next" ? "" : "disabled"}>${state.stepIndex === steps.length - 1 ? "Done" : "Next"}</button>
+          <button id="tutorial-next" ${step.action.type === "next" ? "" : "disabled"}>${state.stepIndex === steps.length - 1 ? escapeHtml(t("tutorial.done")) : escapeHtml(t("tutorial.next"))}</button>
         </div>
       </aside>
     </main>
@@ -243,6 +244,10 @@ export function renderTutorial(root: HTMLElement, onExit: () => void) {
   root.querySelectorAll<HTMLButtonElement>(".tutorial-step-btn").forEach((button) => {
     button.addEventListener("click", () => completeExpected(root, onExit, { type: "select-step", pawnId: button.dataset.pawnId || "", steps: Number(button.dataset.steps) }));
   });
+}
+
+function tutorialSeatLabels(): Partial<Record<Seat, string>> {
+  return { A1: t("tutorial.partner"), B1: t("tutorial.opponent"), A2: t("tutorial.you"), B2: t("tutorial.opponent") };
 }
 
 function initialState(): TutorialState {
@@ -305,22 +310,22 @@ function renderTutorialCard(card: CardInfo, selectable: boolean, selected: boole
 }
 
 function renderTutorialControls(step: TutorialStep) {
-  if (step.scenario === "tour") return `<p class="muted">The game reveals only the choices that matter right now.</p>`;
+  if (step.scenario === "tour") return `<p class="muted">${escapeHtml(t("tutorial.reveals"))}</p>`;
   if (step.scenario === "four") {
-    return `<div class="choice-group"><span>Choose direction</span><button class="choice-btn tutorial-option ${state.selectedOption === "forward" ? "selected" : ""}" data-value="forward">Move +4</button><button class="choice-btn tutorial-option ${state.selectedOption === "backward" ? "selected" : ""}" data-value="backward">Move -4</button></div>`;
+    return `<div class="choice-group"><span>${escapeHtml(t("tutorial.chooseDirection"))}</span><button class="choice-btn tutorial-option ${state.selectedOption === "forward" ? "selected" : ""}" data-value="forward">${escapeHtml(t("variant.moveForward", { steps: 4 }))}</button><button class="choice-btn tutorial-option ${state.selectedOption === "backward" ? "selected" : ""}" data-value="backward">${escapeHtml(t("variant.moveBackward", { steps: 4 }))}</button></div>`;
   }
   if (step.scenario === "joker") {
-    return `<div class="choice-group"><span>Choose joker value</span><button class="choice-btn tutorial-option ${state.selectedOption === "ace" ? "selected" : ""}" data-value="ace">Ace</button><button class="choice-btn tutorial-option" data-value="jack">Jack</button><button class="choice-btn tutorial-option" data-value="seven">7</button></div>`;
+    return `<div class="choice-group"><span>${escapeHtml(t("tutorial.chooseJoker"))}</span><button class="choice-btn tutorial-option ${state.selectedOption === "ace" ? "selected" : ""}" data-value="ace">${escapeHtml(t("rank.ace"))}</button><button class="choice-btn tutorial-option" data-value="jack">J</button><button class="choice-btn tutorial-option" data-value="seven">7</button></div>`;
   }
   if (step.scenario === "seven") {
     const rows = ["A2-1", "A2-2"].map((pawnId) => {
       const chosen = state.sevenSteps[pawnId];
-      return `<div class="seven-move"><div class="seven-move-head"><span>${pawnId === "A2-1" ? "First pawn" : "Second pawn"}</span><span class="pawn-badge" style="--pawn-color:${colors.A2}">${pawnId.endsWith("1") ? 2 : 3}</span></div><div class="step-grid">${[1, 2, 3, 4, 5, 6, 7].map((steps) => `<button class="step-btn tutorial-step-btn ${chosen === steps ? "selected" : ""}" data-pawn-id="${pawnId}" data-steps="${steps}">${steps}</button>`).join("")}</div></div>`;
+      return `<div class="seven-move"><div class="seven-move-head"><span>${pawnId === "A2-1" ? escapeHtml(t("tutorial.firstPawn")) : escapeHtml(t("tutorial.secondPawn"))}</span><span class="pawn-badge" style="--pawn-color:${colors.A2}">${pawnId.endsWith("1") ? 2 : 3}</span></div><div class="step-grid">${[1, 2, 3, 4, 5, 6, 7].map((steps) => `<button class="step-btn tutorial-step-btn ${chosen === steps ? "selected" : ""}" data-pawn-id="${pawnId}" data-steps="${steps}">${steps}</button>`).join("")}</div></div>`;
     });
-    return `<div class="seven-builder"><div class="seven-summary"><span>Split the 7</span><strong>${Object.values(state.sevenSteps).reduce((a, b) => a + b, 0)}/7</strong></div>${rows.join("")}</div>`;
+    return `<div class="seven-builder"><div class="seven-summary"><span>${escapeHtml(t("tutorial.split7"))}</span><strong>${Object.values(state.sevenSteps).reduce((a, b) => a + b, 0)}/7</strong></div>${rows.join("")}</div>`;
   }
-  if (state.selectedCardId) return `<p class="muted">Now tap the highlighted pawn on the board.</p>`;
-  return `<p class="muted">Select the highlighted card to continue.</p>`;
+  if (state.selectedCardId) return `<p class="muted">${escapeHtml(t("tutorial.tapPawn"))}</p>`;
+  return `<p class="muted">${escapeHtml(t("tutorial.selectCard"))}</p>`;
 }
 
 function cardSelectable(step: TutorialStep, cardId: number) {
@@ -370,8 +375,8 @@ function canTutorialPlay(step: TutorialStep) {
 }
 
 function playLabel(step: TutorialStep) {
-  if (step.action.type === "play") return step.scenario === "swap" ? "Swap card" : "Play";
-  return "Play";
+  if (step.action.type === "play") return step.scenario === "swap" ? t("tutorial.swapCard") : t("tutorial.play");
+  return t("tutorial.play");
 }
 
 function completeExpected(root: HTMLElement, onExit: () => void, action: TutorialAction) {

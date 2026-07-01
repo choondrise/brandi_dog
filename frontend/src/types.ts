@@ -1,5 +1,5 @@
 export type Seat = "A1" | "B1" | "A2" | "B2";
-export type BotLevel = "Idiot" | "Easy" | "Medium" | "Hard" | "Cheater";
+export type BotLevel = "Idiot" | "Easy" | "Medium" | "Hard" | "Very Hard" | "Cheater";
 
 export interface SeatInfo {
   seat: Seat;

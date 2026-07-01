@@ -1,5 +1,6 @@
 from .action_generation import AgentActionGenerationPolicy
 from .advanced_heuristic_agent import AdvancedHeuristicAgent
+from .belief_monte_carlo_heuristic_agent import BeliefMonteCarloHeuristicAgent
 from .heuristic_agent import HeuristicAgent
 from .monte_carlo_agent import MonteCarloAgent
 from .monte_carlo_imperfect import ImperfectInformationMonteCarloAgent, MonteCarloImperfectAgent
@@ -8,6 +9,7 @@ from .random_legal_agent import RandomLegalAgent
 __all__ = [
     "AgentActionGenerationPolicy",
     "AdvancedHeuristicAgent",
+    "BeliefMonteCarloHeuristicAgent",
     "HeuristicAgent",
     "MonteCarloAgent",
     "ImperfectInformationMonteCarloAgent",

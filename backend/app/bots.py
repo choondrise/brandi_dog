@@ -7,13 +7,14 @@ from pathlib import Path
 from brandi_dog.agents import (
     DeepLearningAgent,
     HeuristicAgent,
+    BeliefMonteCarloHeuristicAgent,
     ImperfectInformationMonteCarloAgent,
     MonteCarloAgent,
     RandomLegalAgent,
 )
 
 
-BOT_LEVELS = ("Idiot", "Easy", "Medium", "Hard", "Cheater")
+BOT_LEVELS = ("Idiot", "Easy", "Medium", "Hard", "Very Hard", "Cheater")
 DEFAULT_MEDIUM_WEIGHTS = (
     Path(__file__).resolve().parents[2]
     / "brandi_dog"
@@ -35,6 +36,14 @@ def build_bot(level: str, seed: int):
         return _shared_medium_bot()
     if normalized == "Hard":
         return ImperfectInformationMonteCarloAgent(seed=seed, top_k=3, rollouts_per_action=2, rollout_workers=1)
+    if normalized == "Very Hard":
+        return BeliefMonteCarloHeuristicAgent(
+            seed=seed,
+            top_k=_env_int("BRANDI_VERY_HARD_TOP_K", 4),
+            rollouts_per_action=_env_int("BRANDI_VERY_HARD_ROLLOUTS", 5),
+            rollout_policy=os.environ.get("BRANDI_VERY_HARD_ROLLOUT_POLICY", "advanced_heuristic"),
+            rollout_workers=_env_int("BRANDI_VERY_HARD_WORKERS", 2),
+        )
     if normalized == "Cheater":
         return MonteCarloAgent(seed=seed, top_k=3, rollouts_per_action=2, rollout_workers=1)
     raise ValueError(f"Unknown bot level: {level}")
@@ -46,6 +55,19 @@ def _shared_medium_bot():
     if not weights_path.exists():
         raise RuntimeError(f"Medium bot checkpoint not found: {weights_path}")
     return DeepLearningAgent(seed=0, weights_path=str(weights_path), device=os.environ.get("BRANDI_MEDIUM_DEVICE", "auto"), encoder="auto")
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    if raw is None or raw == "":
+        return default
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be an integer") from exc
+    if value <= 0:
+        raise ValueError(f"{name} must be greater than zero")
+    return value
 
 
 def _normalize_level(level: str) -> str:

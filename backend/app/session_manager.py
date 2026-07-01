@@ -25,6 +25,15 @@ from .serialization import action_key, active_player, describe_action, serialize
 SEAT_ORDER = (PlayerId.A1, PlayerId.B1, PlayerId.A2, PlayerId.B2)
 logger = logging.getLogger(__name__)
 
+AUTOMATIC_ACTION_DELAY_SECONDS = 0.15
+SWAP_OVERLAY_DELAY_SECONDS = 2.1
+
+
+def model_to_dict(model):
+    if hasattr(model, "model_dump"):
+        return model.model_dump()
+    return model.dict()
+
 
 @dataclass
 class HumanPlayer:
@@ -116,10 +125,10 @@ class SessionManager:
                     session.bot_agents[seat] = build_bot(session.bot_levels[seat], seed=secrets.randbelow(1_000_000_000))
             session.phase = "PLAYING"
             events: list[dict[str, Any]] = []
-            pause_for_swap = self._advance_automatic_locked(session, events)
+            should_continue = self._has_automatic_action_locked(session)
         await self._broadcast(session, events)
-        if pause_for_swap:
-            self._schedule_automatic_after_swap_overlay(session)
+        if should_continue:
+            self._schedule_automatic_continuation(session)
         return session, events
 
     async def apply_action(
@@ -143,6 +152,7 @@ class SessionManager:
                 raise HTTPException(status_code=403, detail="It is not your turn")
             events: list[dict[str, Any]] = []
             legal = session.engine.legal_actions(session.state)
+            completed_swap = False
             if seven_moves is not None:
                 action = self._build_custom_seven_action(actor, card_id, represented_rank, seven_moves)
                 self._log_human_dataset_decision(session, player, tuple(legal), action)
@@ -150,11 +160,12 @@ class SessionManager:
             else:
                 action = self._select_legal_action(legal, action_id, selected_action_key)
                 self._log_human_dataset_decision(session, player, tuple(legal), action)
-                self._apply_action_locked(session, action, events)
-            pause_for_swap = self._advance_automatic_locked(session, events)
+                completed_swap = self._apply_action_locked(session, action, events)
+            should_continue = self._has_automatic_action_locked(session)
         await self._broadcast(session, events)
-        if pause_for_swap:
-            self._schedule_automatic_after_swap_overlay(session)
+        if should_continue:
+            delay = SWAP_OVERLAY_DELAY_SECONDS if completed_swap else AUTOMATIC_ACTION_DELAY_SECONDS
+            self._schedule_automatic_continuation(session, delay=delay)
         return session, events
 
     async def preview_seven(
@@ -275,7 +286,7 @@ class SessionManager:
         if session.engine is not None and session.state is not None and viewer == active_player(session.state):
             legal = session.engine.legal_actions(session.state)
         return {
-            "session": self.public_session(session).model_dump(),
+            "session": model_to_dict(self.public_session(session)),
             "game": serialize_game(session.engine, session.state, legal, viewer) if session.engine is not None else None,
             "viewerSeat": None if viewer is None else viewer.name,
             "isHost": token == session.host_token or (token in session.players and session.players[token].is_host),
@@ -322,9 +333,12 @@ class SessionManager:
     def _select_bot_action_locked(self, session: GameSession, actor: PlayerId, legal):
         assert session.engine is not None
         assert session.state is not None
+        return self._select_bot_action_from_agent(session.bot_agents[actor], session.engine, session.state, actor, legal)
+
+    def _select_bot_action_from_agent(self, agent, engine: GameEngine, state: GameState, actor: PlayerId, legal):
         legal_by_key = {action_key(action): action for action in legal}
         try:
-            selected = session.bot_agents[actor].select_action(session.engine, session.state)
+            selected = agent.select_action(engine, state)
             selected_key = action_key(selected)
             if selected_key not in legal_by_key:
                 raise ValueError(f"Bot {actor.name} selected an illegal action: {selected_key}")
@@ -345,19 +359,76 @@ class SessionManager:
             events.append(self._turn_event(session, action, before_state, before_pawns, after_pawns))
         return completed_swap
 
+    def _has_automatic_action_locked(self, session: GameSession) -> bool:
+        assert session.engine is not None
+        assert session.state is not None
+        if session.state.round_stage == RoundStage.GAME_OVER:
+            session.phase = "FINISHED"
+            return False
+        actor = active_player(session.state)
+        if actor is None:
+            return False
+        legal = session.engine.legal_actions(session.state)
+        if not legal:
+            return False
+        return actor in session.bot_agents or (len(legal) == 1 and isinstance(legal[0], SkipTurnAction))
+
+    def _schedule_automatic_continuation(self, session: GameSession, delay: float = AUTOMATIC_ACTION_DELAY_SECONDS) -> None:
+        asyncio.create_task(self._continue_automatic_actions(session, delay))
+
     def _schedule_automatic_after_swap_overlay(self, session: GameSession) -> None:
-        asyncio.create_task(self._continue_automatic_after_swap_overlay(session))
+        self._schedule_automatic_continuation(session, delay=SWAP_OVERLAY_DELAY_SECONDS)
+
+    async def _continue_automatic_actions(self, session: GameSession, initial_delay: float = 0.0) -> None:
+        if initial_delay > 0:
+            await asyncio.sleep(initial_delay)
+        guard = 0
+        while guard < 200:
+            events: list[dict[str, Any]] = []
+            completed_swap = False
+            should_continue = False
+            action = None
+            engine_snapshot: Optional[GameEngine] = None
+            state_snapshot: Optional[GameState] = None
+            actor: Optional[PlayerId] = None
+            legal = None
+            bot_agent = None
+            async with session.lock:
+                if session.phase not in {"PLAYING", "FINISHED"} or session.engine is None or session.state is None:
+                    return
+                if not self._has_automatic_action_locked(session):
+                    return
+                engine_snapshot = session.engine
+                state_snapshot = session.state
+                actor = active_player(state_snapshot)
+                legal = engine_snapshot.legal_actions(state_snapshot)
+                if actor in session.bot_agents:
+                    bot_agent = session.bot_agents[actor]
+                elif len(legal) == 1 and isinstance(legal[0], SkipTurnAction):
+                    action = legal[0]
+                else:
+                    return
+            if bot_agent is not None:
+                assert actor is not None and engine_snapshot is not None and state_snapshot is not None and legal is not None
+                action = self._select_bot_action_from_agent(bot_agent, engine_snapshot, state_snapshot, actor, legal)
+            async with session.lock:
+                if session.phase not in {"PLAYING", "FINISHED"} or session.engine is None or session.state is None:
+                    return
+                if session.state is not state_snapshot or active_player(session.state) != actor:
+                    continue
+                completed_swap = self._apply_action_locked(session, action, events)
+                if session.state.round_stage == RoundStage.GAME_OVER:
+                    session.phase = "FINISHED"
+                should_continue = self._has_automatic_action_locked(session)
+            await self._broadcast(session, events)
+            if not should_continue:
+                return
+            guard += 1
+            await asyncio.sleep(SWAP_OVERLAY_DELAY_SECONDS if completed_swap else AUTOMATIC_ACTION_DELAY_SECONDS)
+        logger.warning("Stopped automatic continuation for game %s after hitting the guard limit", session.game_id)
 
     async def _continue_automatic_after_swap_overlay(self, session: GameSession) -> None:
-        await asyncio.sleep(2.1)
-        events: list[dict[str, Any]] = []
-        async with session.lock:
-            if session.phase not in {"PLAYING", "FINISHED"} or session.engine is None or session.state is None:
-                return
-            pause_for_swap = self._advance_automatic_locked(session, events)
-        await self._broadcast(session, events)
-        if pause_for_swap:
-            self._schedule_automatic_after_swap_overlay(session)
+        await self._continue_automatic_actions(session, SWAP_OVERLAY_DELAY_SECONDS)
 
     def _apply_custom_seven_locked(self, session: GameSession, action: PlaySevenSplitAction, events: list[dict[str, Any]]) -> None:
         assert session.engine is not None
@@ -411,7 +482,7 @@ class SessionManager:
         disconnected: list[WebSocket] = []
         for websocket, token in list(session.websockets.items()):
             try:
-                if events:
+                if events is not None:
                     await websocket.send_json(self.game_payload(session, token, events))
                 else:
                     await websocket.send_json({"type": "refresh"})

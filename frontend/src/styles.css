@@ -377,6 +377,43 @@ label {
   gap: 10px;
 }
 
+.language-picker {
+  display: grid;
+  gap: 8px;
+}
+
+.language-picker > span {
+  color: #637065;
+  font-size: 0.75rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.language-options {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.language-option {
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 8px;
+  display: inline-grid;
+  place-items: center;
+}
+
+.language-flag {
+  display: block;
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.language-option.selected {
+  border-color: rgba(20, 61, 43, 0.48);
+  background: rgba(20, 61, 43, 0.08);
+}
+
 .topbar,
 .game-status,
 .hand-header,
@@ -1310,6 +1347,30 @@ label {
   gap: 6px;
 }
 
+.seven-route-options {
+  display: grid;
+  gap: 6px;
+}
+
+.seven-route-options > span {
+  color: #637065;
+  font-size: 0.72rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.seven-route-buttons {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.seven-route-buttons .choice-btn {
+  min-height: 34px;
+  padding: 0 8px;
+  font-size: 0.82rem;
+}
+
 .step-btn {
   min-width: 0;
   min-height: 38px;
@@ -1795,5 +1856,42 @@ label {
   .tutorial-panel-middle {
     top: 50%;
     bottom: auto;
+  }
+}
+
+.home-intro-complete .brand-title {
+  animation: none;
+  transform: scale(1.12);
+}
+
+.home-intro-complete .brand-title-letter {
+  fill-opacity: 1;
+  stroke-opacity: 0;
+  stroke-dashoffset: 0;
+  animation: none;
+  transform: rotate(0deg) scale(1);
+}
+
+.home-intro-complete .home-subtitle span,
+.home-intro-complete .home-entry-panel {
+  opacity: 1;
+  transform: none;
+  animation: none;
+}
+
+.home-intro-complete .home-divider {
+  animation: none;
+  transform: scale(1);
+}
+
+@media (max-width: 759px) {
+  .home-intro-complete .brand-title {
+    transform: scale(1.14);
+  }
+}
+
+@media (min-width: 760px) {
+  .home-intro-complete .brand-title {
+    transform: scale(1.12);
   }
 }
